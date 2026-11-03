@@ -5,9 +5,13 @@
 
 ## מה הפרויקט
 
-פרויקט הדגמה לעבודה עם **מספר סוכנים** (Claude Code, Codex ואחרים), מהשיעור
-«פיתוח עם סוכני-קוד», מסלול A_638, 15 באוקטובר 2026.
-הכללים הכלליים של חומרי ההוראה נטענים מהקובץ `AI Engineering/CLAUDE.md` ואינם חוזרים כאן.
+> עודכן 2026-11-03: הסעיפים «מה הפרויקט», «פקודות» ו«מבנה הקוד» תיארו קודם את פרויקט הסוליטר שממנו הועתקה התבנית.
+> כללי העבודה עצמם לא השתנו. פירוט: `progress/2026-11-03-1740-build-kesem-app.md`.
+
+פרויקט גמר בקורס Vibe Coding: מערכת ניהול אירועים לאולם «קסם בגלבוע» (מקרה 1 בבנק הבעיות).
+Next.js על Vercel, מסד נתונים והרשאות ב-Supabase, סוכן AI על Claude. האפיון המחייב: `docs/spec.md`.
+חומרי המקור (עדויות, תרשים זרימה, תפריטים) נמצאים בשורש הפרויקט ובתיקיית `תפריטים/`.
+הפרויקט נבנה גם כהדגמה לעבודה עם **מספר סוכנים** (Claude Code, Codex ואחרים).
 
 ## מקור האמת: הקבצים בלבד
 
@@ -86,20 +90,27 @@ progress/2026-10-15-2031-שם-קצר-באנגלית.md
 ## פקודות
 
 ```bash
-npm start     # שרת מקומי על http://localhost:8765, מגיש את src/
-npm test      # בדיקות ללוגיקה (node --test), כולל הרצת בדיקה אחת:
-node --test --test-name-pattern="קרן" tests/
+npm install
+npm run dev       # שרת פיתוח על http://localhost:3000 (צריך .env.local, ראו .env.example)
+npm run build     # בנייה לייצור, כולל בדיקת טיפוסים
+npm test          # כל הבדיקות (node --test), כולל מסד נתונים על PGlite
+node --test --test-name-pattern="500" "tests/**/*.test.*"   # בדיקה אחת לפי שם
+npm run seed      # נתוני דמו ב-Supabase (דורש SUPABASE_SECRET_KEY)
 ```
 
-מה רואים כש-`npm start` עובד: שולחן ירוק עם שבעה טורי קלפים. אין התקנת חבילות.
+מה רואים כש-`npm run dev` עובד: דף נחיתה ירוק-זהב עם הכותרת «כל האירוע שלכם».
+בלי משתני Supabase, דף הנחיתה עובד ודף ההתחברות מציג הודעת הגדרה.
 
 ## מבנה הקוד
 
-- `src/game.js`: כל חוקי המשחק. טהור, בלי DOM, נטען גם בדפדפן וגם ב-Node. פירוט ב-`docs/game-model.md`.
-- `src/app.js`: ציור ואירועים (גרירה, לחיצה, טיימר). לא מכיל חוקי משחק.
-- `src/index.html`, `src/style.css`: הדף והעיצוב. הלוח משמאל לימין, שאר הדף מימין לשמאל.
+- `src/lib/`: הלוגיקה. `quantities.ts`, `validation.ts`, `dates.ts`, `inactivity.ts` ו-`event-text.ts` טהורים
+  (בלי React ובלי Supabase), ונבדקים ב-Node. ייבוא ביניהם עם סיומת `.ts`.
+- `src/lib/agent.ts`: סוכן ה-AI. `src/lib/jobs.ts`: משימות Cron. `src/lib/notify.ts`: מיילים ודואר יוצא.
+- `src/lib/actions/events.ts`: פעולות שרת על תיק אירוע, משותפות ללקוח, לצוות ולסוכן.
+- `src/app/`: דפים. `my/` ללקוח, `book/` לאשף ההזמנה, `dashboard/` לצוות, `api/` לסוכן ול-Cron.
+- `src/proxy.ts`: רענון סשן והפניה להתחברות (ב-Next.js 16 זה השם החדש של middleware).
+- `supabase/migrations/`: **ההרשאות נאכפות כאן (RLS),** לא רק בממשק. כל שינוי בהרשאות מקבל בדיקה ב-`tests/db.test.mjs`.
 - **כל קבצי הקוד נמצאים ב-`src/`.** בדיקות ב-`tests/`.
-- בהמשך מתוכנן מעבר ל-Next.js, Supabase ו-Vercel: `issues/2026-10-15-migrate-to-next-supabase-vercel.md`.
 
 ## כללי עבודה
 

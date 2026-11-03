@@ -3,11 +3,13 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
+import { isSupabaseConfigured } from "./supabase/env";
 import type { Profile, UserRole } from "./types";
 import { STAFF_ROLES } from "./types";
 
 // cache: גם אם ה-layout וגם הדף שואלים, השאילתה רצה פעם אחת בכל בקשה
 export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
+  if (!isSupabaseConfigured()) return null; // בלי הגדרות: מתנהגים כמו «לא מחובר», ודף ההתחברות מסביר מה חסר
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const userId = claims?.claims?.sub;
