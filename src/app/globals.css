@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* צבעי המותג: ירוק גלבוע, זהב וקרם. מוגדרים כאן פעם אחת ומשמשים בכל הממשק (bg-brand, text-gold וכו') */
+@theme {
+  --color-brand: #2f4a3a;
+  --color-brand-dark: #1f3327;
+  --color-brand-light: #e7efe9;
+  --color-gold: #b8913f;
+  --color-gold-light: #f6edd8;
+  --color-cream: #fbf8f2;
+  --color-ink: #1d2420;
+  --color-muted: #66716b;
+  --color-line: #e4ded2;
+  --font-sans: var(--font-heebo), system-ui, sans-serif;
+  --font-display: var(--font-frank), Georgia, serif;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+/* שדות טופס אחידים */
+@utility field {
+  @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-ink outline-none transition
+    focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:bg-gray-100;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium text-ink;
+}
+@utility card {
+  @apply rounded-2xl border border-line bg-white p-5 shadow-sm;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand text-white hover:bg-brand-dark;
+}
+@utility btn-gold {
+  @apply btn bg-gold text-white hover:brightness-95;
+}
+@utility btn-ghost {
+  @apply btn border border-line bg-white text-ink hover:bg-brand-light;
+}
+.table-std th {
+  @apply border-b border-line bg-brand-light/60 px-3 py-2 text-start text-sm font-semibold;
+}
+.table-std td {
+  @apply border-b border-line px-3 py-2 text-sm align-top;
+}

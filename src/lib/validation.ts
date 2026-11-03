@@ -128,8 +128,11 @@ export function validateFinalStep(d: BookingDraft): string[] {
   return errors;
 }
 
-/** בדיקה מלאה לפני שמירה בשרת */
-export function validateBooking(d: BookingDraft, today: string, booked: Set<string>): string[] {
+/**
+ * בדיקה מלאה לפני שמירה בשרת.
+ * requireTasting=false כשאין אף שעת טעימה פנויה: אז אפשר לסיים בלי טעימה ולקבוע אותה בהמשך.
+ */
+export function validateBooking(d: BookingDraft, today: string, booked: Set<string>, requireTasting = true): string[] {
   return [
     ...validateDateStep(d, today, booked),
     ...validateSlotStep(d, booked),
@@ -137,7 +140,7 @@ export function validateBooking(d: BookingDraft, today: string, booked: Set<stri
     ...validateGuestsStep(d),
     ...validateContactStep(d),
     ...COURSES.flatMap((c) => validateMenuStep(d, c)),
-    ...validateTastingStep(d),
+    ...(requireTasting || d.tasting_slot_id ? validateTastingStep(d) : []),
     ...validateFinalStep(d),
   ];
 }
