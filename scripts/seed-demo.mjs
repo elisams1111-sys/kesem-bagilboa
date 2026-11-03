@@ -10,6 +10,11 @@ if (!url || !key) {
   process.exit(1);
 }
 const db = createClient(url, key, { auth: { persistSession: false } });
+/** עוצר את הסקריפט אם פעולה במסד נכשלה, במקום להמשיך בשקט */
+function must(res, what) {
+  if (res.error) throw new Error(`${what}: ${res.error.message}`);
+  return res;
+}
 const PASSWORD = process.env.DEMO_PASSWORD || "Kesem2026!";
 
 // ---------- תאריכים ----------
@@ -67,12 +72,12 @@ for (let i = 1; i <= 30; i++) {
   if (dow > 4) continue; // שישי ושבת
   for (const t of ["17:00", "18:00", "19:00"]) slots.push({ starts_at: israelTime(date, t) });
 }
-await db.from("tasting_slots").upsert(slots, { onConflict: "starts_at", ignoreDuplicates: true });
+must(await db.from("tasting_slots").upsert(slots, { onConflict: "starts_at", ignoreDuplicates: true }), "tasting_slots");
 console.log(`✓ ${slots.length} שעות טעימה`);
 
 // ---------- אירועים ----------
 const clientIds = [ids.dana, ids.yossi, ids.noa];
-await db.from("events").delete().in("client_id", clientIds);
+must(await db.from("events").delete().in("client_id", clientIds), "delete events");
 
 const EVENTS = [
   {
@@ -120,7 +125,7 @@ for (const e of EVENTS) {
   eventIds[key] = data.id;
   const selections = Object.entries(menu).flatMap(([course, groups]) =>
     Object.entries(groups).map(([guest_group, menu_item_id]) => ({ event_id: data.id, course, guest_group, menu_item_id })));
-  await db.from("event_menu_selections").insert(selections);
+  must(await db.from("event_menu_selections").insert(selections), `menu ${key}`);
   if (tastingInDays) {
     const { data: slot } = await db.from("tasting_slots").select("id").is("event_id", null)
       .gte("starts_at", israelTime(plusDays(tastingInDays), "00:00")).order("starts_at").limit(1).single();
@@ -134,7 +139,9 @@ for (const e of EVENTS) {
 
 // ---------- יומן שינויים: שינויים «אמיתיים» מהשבועות האחרונים ----------
 const ago = (hours) => new Date(Date.now() - hours * 3_600_000).toISOString();
-await db.from("change_log").insert([
+// כל השורות עם אותם שדות: בהכנסה מרובה, שדה חסר נשלח כ-null ולא מקבל את ברירת המחדל
+const logRow = (r) => ({ field: null, old_value: null, new_value: null, needs_attention: false, ...r });
+must(await db.from("change_log").insert([
   { event_id: eventIds.dana, changed_by: ids.dana, source: "agent", field: "table_design", old_value: "פרחים סגולים", new_value: "פרחים לבנים ואקליפטוס",
     summary: "עיצוב שולחנות: «מפות שמנת, פרחים סגולים» ← «מפות שמנת, פרחים לבנים ואקליפטוס, נרות נמוכים בכל שולחן»", created_at: ago(30) },
   { event_id: eventIds.dana, changed_by: ids.dana, source: "app", field: "vegan_count", old_value: "15", new_value: "18",
@@ -145,17 +152,17 @@ await db.from("change_log").insert([
   { event_id: eventIds.noa, changed_by: ids.noa, source: "agent", summary: "בקשה מנועה ברק: צריך חשבונית מס על שם החברה לפני התשלום", needs_attention: true, created_at: ago(26) },
   { event_id: eventIds.noa, changed_by: ids.ronit, source: "app", field: "guest_count", old_value: "300", new_value: "320",
     summary: "מספר מוזמנים: «300» ← «320»", created_at: ago(48) },
-]);
+].map(logRow)), "change_log");
 console.log("✓ יומן שינויים");
 
 // ---------- שיחה לדוגמה עם עוזר האירוע ----------
 await db.from("agent_messages").delete().in("user_id", clientIds);
-await db.from("agent_messages").insert([
+must(await db.from("agent_messages").insert([
   { event_id: eventIds.dana, user_id: ids.dana, role: "user", content: "היי! החלפנו את הפרחים הסגולים בלבנים עם אקליפטוס", created_at: ago(30.1) },
   { event_id: eventIds.dana, user_id: ids.dana, role: "assistant", content: "מעולה! עדכנתי בתיק האירוע: פרחים לבנים ואקליפטוס במקום סגולים. רונית תראה את זה בסיכום השינויים. משהו נוסף?", created_at: ago(30) },
   { event_id: eventIds.dana, user_id: ids.dana, role: "user", content: "אפשר להקדים את החופה ל-19:30?", created_at: ago(5.1) },
   { event_id: eventIds.dana, user_id: ids.dana, role: "assistant", content: "שינוי בשעת החופה דורש תיאום עם הצוות, אז העברתי את הבקשה למנהלת האירוע. נחזור אליכם בשעות הפעילות.", created_at: ago(5) },
-]);
+]), "agent_messages");
 console.log("✓ שיחה עם העוזר");
 
 console.log(`\nסיסמה לכל משתמשי הדמו: ${PASSWORD}`);
