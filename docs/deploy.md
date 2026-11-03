@@ -11,6 +11,17 @@
 | בניית הסוכן | `src/lib/agent.ts` + `ANTHROPIC_API_KEY` |
 | פרסום (Deploy) | Vercel |
 
+## מה בוצע בפועל (2026-11-03)
+
+- פרויקט Vercel `kesem-bagilboa` מחובר למאגר `elisams1111-sys/kesem-bagilboa`. כל push ל-`main` נפרס אוטומטית.
+- Supabase נוצר דרך האינטגרציה של Vercel (`vercel integration add supabase --meta region=fra1`).
+  האינטגרציה הוסיפה לבד את כל המפתחות למשתני הסביבה ב-Vercel, ולכן שלבים 1.1 ו-1.5 למטה לא היו נחוצים.
+- המיגרציות רצו ב-`npm run migrate` (`scripts/migrate.mjs`), עם אימות TLS מול תעודת השורש של Supabase
+  ב-`supabase/certs/`. כל קובץ רץ פעם אחת, ומה שכבר רץ נרשם ב-`app_private.schema_migrations`.
+- `CRON_SECRET` ו-`NEXT_PUBLIC_SITE_URL=https://kesem-bagilboa.vercel.app` הוגדרו ב-Vercel.
+- **עוד לא הוגדרו:** `ANTHROPIC_API_KEY` (לסוכן), ובהגדרות ה-Auth ב-Supabase: Site URL וכיבוי Confirm email (שלבים 1.4 ו-1.6).
+  לפאנל של Supabase נכנסים מ-Vercel: Project → Storage → kesem-bagilboa → Open in Supabase.
+
 ## 1. Supabase: מסד הנתונים וההתחברות
 
 1. נכנסים ל-[supabase.com](https://supabase.com) ← **New project**. אזור: `eu-central-1` (פרנקפורט, הכי קרוב לישראל).
