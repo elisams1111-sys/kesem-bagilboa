@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { homeFor } from "@/lib/auth";
 import type { Profile } from "@/lib/types";
+import { Karantina } from "next/font/google";
 import { TableScene } from "./scenes";
+
+// הגופן של שם האולם: Karantina, צר ודרמטי כמו שלט. מ-Google Fonts עם תמיכה בעברית
+const karantina = Karantina({ subsets: ["hebrew"], weight: "700" });
+const BRAND = "קסם בגלבוע";
 
 export function Landing({ profile }: { profile: Profile | null }) {
   // אורח נרשם או מתחבר. משתמש מחובר ממשיך להזמנה או לאזור שלו
@@ -18,9 +23,23 @@ export function Landing({ profile }: { profile: Profile | null }) {
       {/* בנייד הכותרת עולה גבוה יותר על האיור, ולכן השכבה שם חזקה יותר */}
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent lg:from-black/65 lg:via-black/10" />
       {/* שם האולם, במרכז ומעל הפרגולה והאורות. גובה השורה נשמר נמוך כדי שלא יגיע אל קורת הפרגולה */}
-      <nav className="relative pt-4 text-center md:pt-4">
-        <Link href="/" className="font-display text-4xl font-bold leading-none text-white [text-shadow:0_2px_14px_rgb(0_0_0/0.7)] md:text-[3.25rem]">
-          קסם בגלבוע
+      <nav className="relative pt-4 text-center">
+        <Link
+          href="/"
+          aria-label={BRAND}
+          className={`inline-block leading-none text-white [text-shadow:0_2px_14px_rgb(0_0_0/0.7),0_0_28px_rgb(241_208_138/0.45)] ${karantina.className} text-[3rem] md:text-[4.2rem]`}
+        >
+          {/* כל אות נכנסת בנפרד, בהשראת Reveal Text של isaiahbjork ב-21st.dev. בעברית מותר לפצל לאותיות,
+              כי אין חיבורים בין אותיות כמו בערבית. קורא מסך מקבל את השם השלם מ-aria-label */}
+          {Array.from(BRAND).map((ch, i) =>
+            ch === " " ? (
+              " "
+            ) : (
+              <span key={i} aria-hidden className="brand-letter" style={{ animationDelay: `${i * 70}ms` }}>
+                {ch}
+              </span>
+            ),
+          )}
         </Link>
       </nav>
       <div className="relative mx-auto mt-auto flex w-full max-w-7xl flex-col gap-8 px-5 pb-10 md:px-10 md:pb-14 lg:flex-row lg:items-end lg:justify-between">

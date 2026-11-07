@@ -142,9 +142,23 @@ body {
   }
 }
 
+/* שם האולם בדף הנחיתה: כל אות עולה מטשטוש למקומה, אחת אחרי השנייה (העיכוב נקבע לכל אות בקוד) */
+.brand-letter {
+  display: inline-block;
+  animation: brand-letter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes brand-letter {
+  from {
+    opacity: 0;
+    transform: translateY(0.35em);
+    filter: blur(6px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cta-shiny,
-  .string-light {
+  .string-light,
+  .brand-letter {
     animation: none;
   }
   .cta-shiny::after {
