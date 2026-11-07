@@ -93,8 +93,15 @@ const EVENTS = [
     key: "yossi", client_id: ids.yossi, sales_rep_id: ids.avi, title: "בר המצווה של איתי", event_type: "bar_mitzvah",
     event_date: plusDays(20), time_slot: "morning", guest_count: 150, vegan_count: 6, celiac_count: 2,
     table_design: "כחול ולבן, מרכזי שולחן עם תמונות של איתי", slideshow_time: "אחרי ברכת הבר מצווה",
-    payment_method: "credit_card", deposit_confirmed: true, status: "booked",
-    menu: { reception: { regular: 102, celiac: 153, vegan: 105 }, first: { regular: 205, celiac: 252, vegan: 204 }, intermediate: { regular: 303, celiac: 353, vegan: 302 }, main: { regular: 402, celiac: 452, vegan: 404 }, dessert: { regular: 501, celiac: 553, vegan: 505 } },
+    payment_method: "credit_card", deposit_confirmed: true, status: "booked", tasters: 4,
+    // לפני הטעימה: אין עדיין תפריט סופי, רק המנות שבחרו לטעום (3 רגילות, 2 ללא גלוטן, טבעוניות לפי מה שיש)
+    tasting: {
+      reception: { regular: [101, 102, 103], celiac: [151, 153], vegan: [105] },
+      first: { regular: [201, 202, 205], celiac: [251, 252], vegan: [204] },
+      intermediate: { regular: [301, 302, 303], celiac: [351, 353], vegan: [302, 352] },
+      main: { regular: [401, 402, 403], celiac: [451, 452], vegan: [404, 453] },
+      dessert: { regular: [501, 503, 504], celiac: [552, 553], vegan: [505] },
+    },
     tastingInDays: 3,
   },
   {
@@ -119,13 +126,20 @@ const EVENTS = [
 
 const eventIds = {};
 for (const e of EVENTS) {
-  const { key, menu, tastingInDays, ...row } = e;
+  const { key, menu, tasting, tastingInDays, ...row } = e;
   const { data, error } = await db.from("events").insert({ ...row, last_change_source: "system" }).select("id").single();
   if (error) throw new Error(`${key}: ${error.message}`);
   eventIds[key] = data.id;
-  const selections = Object.entries(menu).flatMap(([course, groups]) =>
-    Object.entries(groups).map(([guest_group, menu_item_id]) => ({ event_id: data.id, course, guest_group, menu_item_id })));
-  must(await db.from("event_menu_selections").insert(selections), `menu ${key}`);
+  if (menu) {
+    const selections = Object.entries(menu).flatMap(([course, groups]) =>
+      Object.entries(groups).map(([guest_group, menu_item_id]) => ({ event_id: data.id, course, guest_group, menu_item_id })));
+    must(await db.from("event_menu_selections").insert(selections), `menu ${key}`);
+  }
+  if (tasting) {
+    const picks = Object.entries(tasting).flatMap(([course, groups]) =>
+      Object.entries(groups).flatMap(([guest_group, ids]) => ids.map((menu_item_id) => ({ event_id: data.id, course, guest_group, menu_item_id }))));
+    must(await db.from("event_tasting_picks").insert(picks), `tasting ${key}`);
+  }
   if (tastingInDays) {
     const { data: slot } = await db.from("tasting_slots").select("id").is("event_id", null)
       .gte("starts_at", israelTime(plusDays(tastingInDays), "00:00")).order("starts_at").limit(1).single();

@@ -26,13 +26,15 @@ export function eventSummary(e: EventRow, client?: Pick<Profile, "full_name" | "
   return lines.join("\n");
 }
 
+/** תפריט כטקסט, שלב בכל שורה. עובד גם לתפריט הסופי (מנה אחת לקבוצה) וגם למנות לטעימה (כמה מנות לקבוצה) */
 export function menuText(selections: MenuSelection[], items: MenuItem[]): string {
   const byId = new Map(items.map((m) => [m.id, m]));
   return COURSES.map((c) => {
-    const picks = selections
-      .filter((s) => s.course === c)
-      .map((s) => `${GROUP_LABELS[s.guest_group]}: ${byId.get(s.menu_item_id)?.title ?? "?"}`);
-    return `${COURSE_LABELS[c]}: ${picks.length ? picks.join(" | ") : "לא נבחר"}`;
+    const inCourse = selections.filter((s) => s.course === c);
+    const groups = [...new Set(inCourse.map((s) => s.guest_group))];
+    const parts = groups.map((g) =>
+      `${GROUP_LABELS[g]}: ${inCourse.filter((s) => s.guest_group === g).map((s) => byId.get(s.menu_item_id)?.title ?? "?").join(", ")}`);
+    return `${COURSE_LABELS[c]}: ${parts.length ? parts.join(" | ") : "לא נבחר"}`;
   }).join("\n");
 }
 
@@ -57,7 +59,7 @@ export function bookedMail(e: EventRow, client: Profile | null) {
 export function tastingMail(e: EventRow, startsAt: string, client: Profile | null, menu: string) {
   return {
     subject: `טעימה נקבעה: ${eventName(e)}, ${formatDateTimeHe(startsAt)}`,
-    body: `נקבעה טעימה.\n\nמועד הטעימה: ${formatDateTimeHe(startsAt)}\n${eventSummary(e, client)}\n\nמה בחרו לטעום:\n${menu}\n\nתיק האירוע:\n${siteUrl()}/dashboard/events/${e.id}`,
+    body: `נקבעה טעימה.\n\nמועד הטעימה: ${formatDateTimeHe(startsAt)}\nמגיעים לטעימה: ${e.tasters} אנשים\n${eventSummary(e, client)}\n\nמה בחרו לטעום:\n${menu}\n\nתיק האירוע:\n${siteUrl()}/dashboard/events/${e.id}`,
   };
 }
 

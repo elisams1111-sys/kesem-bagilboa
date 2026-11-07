@@ -78,6 +78,12 @@ export async function changeMenuSelection(
     if (group === "celiac" && item.diet !== "celiac") return { ok: false, error: "לסועדים ללא גלוטן יש לבחור מנה מהתפריט ללא גלוטן" };
     if (group === "vegan" && !item.is_vegan) return { ok: false, error: "המנה הזו לא טבעונית" };
     if (group === "regular" && item.diet !== "regular") return { ok: false, error: "לסועדים הרגילים יש לבחור מהתפריט הרגיל" };
+
+    // התפריט הסופי נבחר מתוך המנות שנטעמו. אירוע בלי מנות לטעימה (הוזמן לפני השינוי) פתוח לכל המנות
+    const { data: picks } = await supabase.from("event_tasting_picks").select("menu_item_id")
+      .match({ event_id: eventId, course, guest_group: group });
+    if (picks?.length && !picks.some((p) => p.menu_item_id === menuItemId))
+      return { ok: false, error: "את התפריט הסופי בוחרים מתוך המנות שנבחרו לטעימה" };
   }
 
   // מקור השינוי נרשם על האירוע, והטריגר של התפריט מעתיק אותו ליומן
@@ -98,15 +104,18 @@ export async function bookTastingSlot(eventId: string, slotId: number): Promise<
   if (error) return { ok: false, error: dbError(error.message) };
 
   // מייל לשף ולמנהלת האירוע, כדי שאף אחד לא יופתע מזוג שמגיע לטעימה
-  const [{ data: ev }, { data: slot }, { data: sel }, { data: items }] = await Promise.all([
+  const [{ data: ev }, { data: slot }, { data: sel }, { data: picks }, { data: items }] = await Promise.all([
     supabase.from("events").select("*").eq("id", eventId).single(),
     supabase.from("tasting_slots").select("starts_at").eq("id", slotId).single(),
     supabase.from("event_menu_selections").select("*").eq("event_id", eventId),
+    supabase.from("event_tasting_picks").select("*").eq("event_id", eventId),
     supabase.from("menu_items").select("*"),
   ]);
+  // במייל: המנות לטעימה. אירוע ישן בלי מנות לטעימה מציג את התפריט הסופי
+  const tasted = (picks?.length ? picks : sel ?? []) as MenuSelection[];
   if (ev && slot) {
     const { data: client } = await supabase.from("profiles").select("*").eq("id", ev.client_id).single();
-    const mail = tastingMail(ev as EventRow, slot.starts_at, client as Profile, menuText((sel ?? []) as MenuSelection[], (items ?? []) as MenuItem[]));
+    const mail = tastingMail(ev as EventRow, slot.starts_at, client as Profile, menuText(tasted, (items ?? []) as MenuItem[]));
     await sendMailSafe({ kind: "tasting_booked", to: await emailsForRoles(["chef", "event_manager"]).catch(() => []), ...mail, eventId, dedupeKey: `tasting:${eventId}:${slot.starts_at}` });
   }
   revalidateEvent(eventId);

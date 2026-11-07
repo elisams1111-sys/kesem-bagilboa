@@ -8,11 +8,12 @@ import { DetailsForm } from "@/components/event/details-form";
 import { MenuEditor } from "@/components/event/menu-editor";
 import { OrderTable } from "@/components/event/order-table";
 import { TastingPicker } from "@/components/event/tasting-picker";
+import { TastingDishes } from "@/components/event/tasting-order";
 import { requireStaff } from "@/lib/auth";
 import { formatDateHe, formatDateTimeHe } from "@/lib/dates";
 import { loadEventFile } from "@/lib/event-data";
 import { calendarLinkFor, eventName } from "@/lib/event-text";
-import { computeOrder } from "@/lib/quantities";
+import { computeOrder, computeTastingOrder } from "@/lib/quantities";
 import { EVENT_TYPE_LABELS, SLOT_LABELS } from "@/lib/types";
 
 export default async function StaffEventPage({ params }: { params: Promise<{ id: string }> }) {
@@ -48,7 +49,7 @@ export default async function StaffEventPage({ params }: { params: Promise<{ id:
 
           <section className="card">
             <h2 className="mb-3 text-lg font-semibold">התפריט</h2>
-            <MenuEditor eventId={event.id} selections={file.selections} menuItems={file.menuItems} groups={file.groups} editable={canEdit} />
+            <MenuEditor eventId={event.id} selections={file.selections} picks={file.picks} menuItems={file.menuItems} groups={file.groups} editable={canEdit} />
           </section>
 
           <section className="card">
@@ -80,6 +81,10 @@ export default async function StaffEventPage({ params }: { params: Promise<{ id:
             ) : (
               <p>{file.tasting ? formatDateTimeHe(file.tasting.starts_at) : "לא נקבעה"}</p>
             )}
+            <div className="mt-4 border-t border-line pt-3">
+              <p className="mb-2 text-sm font-medium">מנות לטעימה · {event.tasters} טועמים</p>
+              <TastingDishes order={computeTastingOrder(event.tasters, file.picks, file.menuItems, file.selections)} />
+            </div>
           </section>
 
           <section className="card">

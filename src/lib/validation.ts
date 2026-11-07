@@ -1,8 +1,8 @@
 // בדיקות תקינות לטופס הזמנת האירוע. אותן בדיקות רצות בדפדפן (משוב מיידי) ובשרת (אכיפה).
 // המסד אוכף שוב את החשובות שבהן (500 מוזמנים, משבצת אחת לתאריך), כך שאין סמיכות על הדפדפן.
 
-import type { Course, EventType, GuestGroup, TimeSlot } from "./types.ts";
-import { COURSES, MAX_CONTACTS, MAX_GUESTS } from "./types.ts";
+import type { Course, EventType, GuestGroup, MenuItem, TimeSlot } from "./types.ts";
+import { COURSES, MAX_CONTACTS, MAX_GUESTS, MAX_TASTERS, MIN_TASTERS, TASTING_PICKS } from "./types.ts";
 
 export interface BookingDraft {
   event_date: string; // YYYY-MM-DD
@@ -13,11 +13,12 @@ export interface BookingDraft {
   guest_count: number;
   vegan_count: number;
   celiac_count: number;
+  tasters: number; // כמה מגיעים לטעימה
   full_name: string;
   phones: string[];
   emails: string[];
-  // בחירת תפריט: course → קבוצה → מזהה מנה
-  menu: Partial<Record<Course, Partial<Record<GuestGroup, number>>>>;
+  // מנות לטעימה: course → קבוצה → מזהי מנות (3 רגילות, 2 ללא גלוטן, 2 טבעוניות). התפריט הסופי נבחר אחרי הטעימה
+  tasting_picks: Partial<Record<Course, Partial<Record<GuestGroup, number[]>>>>;
   tasting_slot_id: number | null;
   address: string;
   payment_method: string;
@@ -33,10 +34,11 @@ export const emptyDraft = (): BookingDraft => ({
   guest_count: 100,
   vegan_count: 0,
   celiac_count: 0,
+  tasters: MIN_TASTERS,
   full_name: "",
   phones: [""],
   emails: [""],
-  menu: {},
+  tasting_picks: {},
   tasting_slot_id: null,
   address: "",
   payment_method: "",
@@ -78,11 +80,12 @@ export function validateTypeStep(d: BookingDraft): string[] {
 
 export function validateGuestsStep(d: BookingDraft): string[] {
   const errors: string[] = [];
-  const ints = [d.guest_count, d.vegan_count, d.celiac_count];
+  const ints = [d.guest_count, d.vegan_count, d.celiac_count, d.tasters];
   if (ints.some((n) => !Number.isInteger(n) || n < 0)) return ["יש להזין מספרים שלמים"];
   if (d.guest_count < 1) errors.push("מספר המוזמנים חייב להיות לפחות 1");
   if (d.guest_count > MAX_GUESTS) errors.push(`האולם מוגבל ל-${MAX_GUESTS} מוזמנים`);
   if (d.vegan_count + d.celiac_count > d.guest_count) errors.push("סכום הטבעונים והצליאקים גדול ממספר המוזמנים");
+  if (d.tasters < MIN_TASTERS || d.tasters > MAX_TASTERS) errors.push(`לטעימה מגיעים בין ${MIN_TASTERS} ל-${MAX_TASTERS} אנשים`);
   return errors;
 }
 
@@ -107,12 +110,29 @@ export function requiredGroups(d: Pick<BookingDraft, "vegan_count" | "celiac_cou
   return groups;
 }
 
-export function validateMenuStep(d: BookingDraft, course: Course): string[] {
-  const chosen = d.menu[course] ?? {};
-  const missing = requiredGroups(d).filter((g) => !chosen[g]);
-  if (missing.length === 0) return [];
-  const names = { regular: "רגילה", celiac: "ללא גלוטן", vegan: "טבעונית" };
-  return missing.map((g) => `יש לבחור מנה ${names[g]}`);
+/** המנות שאפשר לבחור לקבוצה בשלב: רגיל מהתפריט הרגיל, ללא גלוטן מהתפריט ללא גלוטן, טבעוני מכל מנה טבעונית */
+export function menuOptions(items: MenuItem[], course: Course, group: GuestGroup): MenuItem[] {
+  return items.filter((m) => m.course === course && (group === "vegan" ? m.is_vegan : m.diet === group));
+}
+
+/** כמה מנות צריך לבחור לטעימה: המספר הקבוע (3 או 2), או פחות אם בשלב אין מספיק מנות לקבוצה */
+export function requiredPicks(items: MenuItem[], course: Course, group: GuestGroup): number {
+  return Math.min(TASTING_PICKS[group], menuOptions(items, course, group).length);
+}
+
+/** בכל קבוצה נדרשת בדיוק הכמות. יותר מזה האשף לא מאפשר, והמסד חוסם */
+export function validateMenuStep(d: BookingDraft, course: Course, items: MenuItem[]): string[] {
+  const plural = { regular: "רגילות", celiac: "ללא גלוטן", vegan: "טבעוניות" };
+  const single = { regular: "רגילה", celiac: "ללא גלוטן", vegan: "טבעונית" };
+  return requiredGroups(d).flatMap((g) => {
+    const need = requiredPicks(items, course, g);
+    const ids = d.tasting_picks[course]?.[g] ?? [];
+    // סופרים רק מזהים תקינים ושונים, כדי שטיוטה משובשת לא תעבור
+    const valid = new Set(menuOptions(items, course, g).map((m) => m.id));
+    const chosen = new Set(ids.filter((id) => valid.has(id))).size;
+    if (chosen === need && ids.length === need) return [];
+    return [need === 1 ? `יש לבחור מנה ${single[g]} לטעימה` : `יש לבחור ${need} מנות ${plural[g]} לטעימה (נבחרו ${chosen})`];
+  });
 }
 
 export function validateTastingStep(d: BookingDraft): string[] {
@@ -132,14 +152,14 @@ export function validateFinalStep(d: BookingDraft): string[] {
  * בדיקה מלאה לפני שמירה בשרת.
  * requireTasting=false כשאין אף שעת טעימה פנויה: אז אפשר לסיים בלי טעימה ולקבוע אותה בהמשך.
  */
-export function validateBooking(d: BookingDraft, today: string, booked: Set<string>, requireTasting = true): string[] {
+export function validateBooking(d: BookingDraft, today: string, booked: Set<string>, items: MenuItem[], requireTasting = true): string[] {
   return [
     ...validateDateStep(d, today, booked),
     ...validateSlotStep(d, booked),
     ...validateTypeStep(d),
     ...validateGuestsStep(d),
     ...validateContactStep(d),
-    ...COURSES.flatMap((c) => validateMenuStep(d, c)),
+    ...COURSES.flatMap((c) => validateMenuStep(d, c, items)),
     ...(requireTasting || d.tasting_slot_id ? validateTastingStep(d) : []),
     ...validateFinalStep(d),
   ];

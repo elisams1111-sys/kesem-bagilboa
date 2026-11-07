@@ -111,16 +111,17 @@ async function runTool(eventId: string, name: string, input: ToolInput): Promise
   const supabase = await createClient();
   switch (name) {
     case "get_event_details": {
-      const [{ data: ev }, { data: sel }, { data: items }, { data: slot }] = await Promise.all([
+      const [{ data: ev }, { data: sel }, { data: picks }, { data: items }, { data: slot }] = await Promise.all([
         supabase.from("events").select("*").eq("id", eventId).single(),
         supabase.from("event_menu_selections").select("*").eq("event_id", eventId),
+        supabase.from("event_tasting_picks").select("*").eq("event_id", eventId),
         supabase.from("menu_items").select("*"),
         supabase.from("tasting_slots").select("starts_at").eq("event_id", eventId).maybeSingle(),
       ]);
       if (!ev) return { text: "האירוע לא נמצא", isError: true };
       const days = daysBetween(todayInIsrael(), (ev as EventRow).event_date);
       return {
-        text: `${eventSummary(ev as EventRow)}\nימים עד האירוע: ${days}\nטעימה: ${slot ? formatDateTimeHe(slot.starts_at) : "לא נקבעה"}\n\nתפריט:\n${menuText((sel ?? []) as MenuSelection[], (items ?? []) as MenuItem[])}`,
+        text: `${eventSummary(ev as EventRow)}\nימים עד האירוע: ${days}\nטעימה: ${slot ? formatDateTimeHe(slot.starts_at) : "לא נקבעה"}\n\nמנות לטעימה (${(ev as EventRow).tasters} טועמים):\n${menuText((picks ?? []) as MenuSelection[], (items ?? []) as MenuItem[])}\n\nתפריט סופי (נבחר אחרי הטעימה, רק מתוך המנות לטעימה):\n${menuText((sel ?? []) as MenuSelection[], (items ?? []) as MenuItem[])}`,
       };
     }
     case "update_event_details": {

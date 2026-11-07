@@ -11,10 +11,10 @@ import { ErrorList } from "@/components/ui";
 import { formatDateHe, israelDateOf } from "@/lib/dates";
 import { isExpired, timeoutFor, type StepKind } from "@/lib/inactivity";
 import type { Course, EventType, GuestGroup, MenuItem, TastingSlot, TimeSlot } from "@/lib/types";
-import { COURSE_LABELS, COURSES, EVENT_TYPE_LABELS, GROUP_LABELS, MAX_CONTACTS, MAX_GUESTS, SLOT_LABELS } from "@/lib/types";
+import { COURSE_LABELS, COURSES, EVENT_TYPE_LABELS, GROUP_LABELS, MAX_CONTACTS, MAX_GUESTS, MAX_TASTERS, MIN_TASTERS, SLOT_LABELS } from "@/lib/types";
 import {
-  emptyDraft, requiredGroups, validateContactStep, validateDateStep, validateFinalStep, validateGuestsStep,
-  validateMenuStep, validateSlotStep, validateTastingStep, validateTypeStep, type BookingDraft,
+  emptyDraft, menuOptions, requiredGroups, requiredPicks, validateContactStep, validateDateStep, validateFinalStep,
+  validateGuestsStep, validateMenuStep, validateSlotStep, validateTastingStep, validateTypeStep, type BookingDraft,
 } from "@/lib/validation";
 import { createBooking } from "./actions";
 
@@ -28,7 +28,10 @@ const STEPS: Step[] = [
   { key: "type", kind: "details", title: "מה חוגגים?" },
   { key: "guests", kind: "details", title: "כמה מוזמנים?", hint: `עד ${MAX_GUESTS} מוזמנים` },
   { key: "contact", kind: "details", title: "פרטי קשר", hint: "עד 3 טלפונים ועד 3 כתובות מייל" },
-  ...COURSES.map((c): Step => ({ key: `menu:${c}`, kind: "menu", title: `תפריט טעימות: ${COURSE_LABELS[c]}`, course: c })),
+  ...COURSES.map((c): Step => ({
+    key: `menu:${c}`, kind: "menu", title: `תפריט טעימות: ${COURSE_LABELS[c]}`, course: c,
+    hint: "בוחרים כמה מנות לטעום. את המנה הסופית לכל שלב בוחרים אחרי הטעימה, מתוך המנות שטעמתם",
+  })),
   { key: "tastingDate", kind: "tasting", title: "תאריך לטעימות", hint: "מסומנים רק ימים עם שעות פנויות" },
   { key: "tastingTime", kind: "tasting", title: "שעה לטעימות" },
   { key: "final", kind: "final", title: "כמעט סיימנו" },
@@ -83,7 +86,9 @@ export function BookingWizard(props: {
           localStorage.removeItem(STORAGE_KEY);
           setNotice("הטיוטה הקודמת נמחקה כי עבר יותר מדי זמן בלי פעולה. מתחילים מחדש.");
         } else {
-          setDraft(saved.draft);
+          // טיוטה שנשמרה לפני שהיו מנות לטעימה (שדה menu ישן): לוקחים את הפרטים, ואת התפריט בוחרים מחדש
+          const { menu: _old, ...rest } = saved.draft as BookingDraft & { menu?: unknown };
+          setDraft({ ...emptyDraft(), ...rest, tasting_picks: rest.tasting_picks ?? {}, tasters: rest.tasters ?? MIN_TASTERS });
           setStep(saved.step);
           setTastingDate(saved.tastingDate);
           setLastActivity(saved.lastActivity);
@@ -141,7 +146,7 @@ export function BookingWizard(props: {
       case "tastingDate": return tastingDate || !props.tastingSlots.length ? [] : ["יש לבחור תאריך לטעימות"];
       case "tastingTime": return props.tastingSlots.length ? validateTastingStep(draft) : [];
       case "final": return validateFinalStep(draft);
-      default: return current.course ? validateMenuStep(draft, current.course) : [];
+      default: return current.course ? validateMenuStep(draft, current.course, props.menuItems) : [];
     }
   }
 
@@ -305,16 +310,21 @@ function StepBody(p: {
   }
 
   if (p.step.key === "guests") {
-    const num = (k: "guest_count" | "vegan_count" | "celiac_count") => (
-      <input type="number" min={0} max={MAX_GUESTS} className="field" value={draft[k]}
+    const num = (k: "guest_count" | "vegan_count" | "celiac_count" | "tasters") => (
+      <input id={k} type="number" min={k === "tasters" ? MIN_TASTERS : 0} max={k === "tasters" ? MAX_TASTERS : MAX_GUESTS} className="field" value={draft[k]}
         onChange={(e) => update({ [k]: e.target.value === "" ? 0 : Math.floor(Number(e.target.value)) } as Partial<BookingDraft>)} />
     );
     return (
       <div className="grid gap-4 sm:grid-cols-3">
-        <div><label className="label">סך הכל מוזמנים</label>{num("guest_count")}</div>
-        <div><label className="label">מתוכם טבעונים/צמחונים</label>{num("vegan_count")}</div>
-        <div><label className="label">מתוכם ללא גלוטן</label>{num("celiac_count")}</div>
+        <div><label className="label" htmlFor="guest_count">סך הכל מוזמנים</label>{num("guest_count")}</div>
+        <div><label className="label" htmlFor="vegan_count">מתוכם טבעונים/צמחונים</label>{num("vegan_count")}</div>
+        <div><label className="label" htmlFor="celiac_count">מתוכם ללא גלוטן</label>{num("celiac_count")}</div>
         <p className="text-sm text-muted sm:col-span-3">אפשר לעדכן את המספרים עד 5 ימים לפני האירוע.</p>
+        <div className="border-t border-line pt-4 sm:col-span-3">
+          <label className="label" htmlFor="tasters">כמה אנשים יגיעו לטעימה?</label>
+          <div className="max-w-40">{num("tasters")}</div>
+          <p className="mt-1 text-sm text-muted">בין {MIN_TASTERS} ל-{MAX_TASTERS}. השף מכין לפי המספר הזה.</p>
+        </div>
       </div>
     );
   }
@@ -357,27 +367,42 @@ function StepBody(p: {
 
   if (p.step.course) {
     const course = p.step.course;
-    const options: Record<GuestGroup, MenuItem[]> = {
-      regular: p.menuItems.filter((m) => m.course === course && m.diet === "regular"),
-      celiac: p.menuItems.filter((m) => m.course === course && m.diet === "celiac"),
-      vegan: p.menuItems.filter((m) => m.course === course && m.is_vegan),
-    };
     const counts = { regular: draft.guest_count - draft.vegan_count - draft.celiac_count, celiac: draft.celiac_count, vegan: draft.vegan_count };
+    // לחיצה מוסיפה מנה או מסירה אותה. כשכבר נבחר המספר המלא, שאר המנות נחסמות עד שמסירים אחת
+    const toggle = (group: GuestGroup, id: number) => {
+      const current = draft.tasting_picks[course]?.[group] ?? [];
+      const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+      update({ tasting_picks: { ...draft.tasting_picks, [course]: { ...draft.tasting_picks[course], [group]: next } } });
+    };
     return (
       <div className="space-y-8">
-        {requiredGroups(draft).map((group) => (
-          <div key={group}>
-            <h2 className="mb-3 font-semibold">
-              {GROUP_LABELS[group]} <span className="text-sm font-normal text-muted">({counts[group]} סועדים)</span>
-            </h2>
-            <div className="grid gap-3 md:grid-cols-2">
-              {options[group].map((m) => (
-                <ChoiceCard key={m.id} selected={draft.menu[course]?.[group] === m.id} title={m.title} text={m.description}
-                  onClick={() => update({ menu: { ...draft.menu, [course]: { ...draft.menu[course], [group]: m.id } } })} />
-              ))}
+        {requiredGroups(draft).map((group) => {
+          const need = requiredPicks(p.menuItems, course, group);
+          const chosen = draft.tasting_picks[course]?.[group] ?? [];
+          const full = chosen.length >= need;
+          return (
+            <div key={group}>
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-semibold">
+                  {GROUP_LABELS[group]} <span className="text-sm font-normal text-muted">({counts[group]} סועדים)</span>
+                </h2>
+                {/* aria-live: קורא מסך מודיע על כל שינוי במונה */}
+                <p aria-live="polite" className={`text-sm font-medium ${full ? "text-brand" : "text-muted"}`}>
+                  {need === 1 ? `בוחרים מנה אחת לטעימה` : `בוחרים ${need} מנות לטעימה`} · נבחרו {chosen.length}
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {menuOptions(p.menuItems, course, group).map((m) => {
+                  const selected = chosen.includes(m.id);
+                  return (
+                    <ChoiceCard key={m.id} selected={selected} disabled={full && !selected} title={m.title} text={m.description}
+                      onClick={() => toggle(group, m.id)} />
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   }
@@ -408,14 +433,14 @@ function StepBody(p: {
   }
 
   // שלב הסיום: שם, כתובת ואמצעי תשלום. אין שדה למספר כרטיס, בכוונה (docs/spec.md §5.3)
-  const menuCount = COURSES.filter((c) => draft.menu[c]?.regular).length;
+  const menuCount = COURSES.filter((c) => validateMenuStep(draft, c, p.menuItems).length === 0).length;
   return (
     <div className="space-y-5">
       <div className="rounded-xl bg-cream p-4 text-sm leading-7">
         <div><b>{draft.title || (draft.event_type ? EVENT_TYPE_LABELS[draft.event_type as EventType] : "")}</b></div>
         <div>{draft.event_date && formatDateHe(draft.event_date)}, {draft.time_slot && SLOT_LABELS[draft.time_slot as TimeSlot]}</div>
         <div>{draft.guest_count} מוזמנים · {draft.vegan_count} טבעונים · {draft.celiac_count} ללא גלוטן</div>
-        <div>תפריט: {menuCount}/5 שלבים נבחרו</div>
+        <div>מנות לטעימה: {menuCount}/5 שלבים נבחרו · {draft.tasters} טועמים</div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>

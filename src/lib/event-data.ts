@@ -3,7 +3,7 @@ import "server-only";
 import { createClient } from "./supabase/server";
 import { daysBetween, todayInIsrael } from "./dates";
 import { requiredGroups } from "./validation";
-import type { ChangeLogRow, EventRow, MenuItem, MenuSelection, NotificationRow, Profile, TastingSlot } from "./types";
+import type { ChangeLogRow, EventRow, MenuItem, MenuSelection, NotificationRow, Profile, TastingPick, TastingSlot } from "./types";
 
 export async function loadEventFile(eventId: string, viewerId: string, withOutbox = false) {
   const supabase = await createClient();
@@ -11,9 +11,10 @@ export async function loadEventFile(eventId: string, viewerId: string, withOutbo
   if (!event) return null;
   const ev = event as EventRow;
 
-  const [client, selections, items, tasting, freeSlots, changes, chat, outbox] = await Promise.all([
+  const [client, selections, picks, items, tasting, freeSlots, changes, chat, outbox] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", ev.client_id).maybeSingle(),
     supabase.from("event_menu_selections").select("*").eq("event_id", eventId),
+    supabase.from("event_tasting_picks").select("*").eq("event_id", eventId),
     supabase.from("menu_items").select("*, menu_item_ingredients(*)").order("id"), // כולל פירוט רכיבים לחישוב ההזמנה
     supabase.from("tasting_slots").select("*").eq("event_id", eventId).maybeSingle(),
     supabase.from("tasting_slots").select("*").is("event_id", null).gt("starts_at", new Date().toISOString()).order("starts_at").limit(60),
@@ -35,6 +36,7 @@ export async function loadEventFile(eventId: string, viewerId: string, withOutbo
     event: ev,
     client: (client.data ?? null) as Profile | null,
     selections: (selections.data ?? []) as MenuSelection[],
+    picks: (picks.data ?? []) as TastingPick[], // המנות שנבחרו לטעימה
     menuItems: (items.data ?? []) as MenuItem[],
     tasting: (tasting.data ?? null) as TastingSlot | null,
     freeSlots: (freeSlots.data ?? []) as TastingSlot[],

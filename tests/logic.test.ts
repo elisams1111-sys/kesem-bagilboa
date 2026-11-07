@@ -3,10 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { computeOrder, formatOrderText, splitGuests } from "../src/lib/quantities.ts";
+import { computeOrder, computeTastingOrder, formatOrderText, splitGuests } from "../src/lib/quantities.ts";
 import type { MenuItem, MenuSelection } from "../src/lib/types.ts";
 import {
-  emptyDraft, requiredGroups, validateContactStep, validateGuestsStep, validateMenuStep,
+  emptyDraft, requiredGroups, requiredPicks, validateContactStep, validateGuestsStep, validateMenuStep,
   validateSlotStep, validateTypeStep, validateDateStep,
 } from "../src/lib/validation.ts";
 import { addDays, daysBetween, googleCalendarLink, isBusinessHours, monthGrid, todayInIsrael } from "../src/lib/dates.ts";
@@ -150,11 +150,75 @@ test("פרטי קשר: עד 3 טלפונים, ופורמט תקין", () => {
   assert.ok(validateContactStep({ ...ok, emails: ["not-an-email"] }).some((e) => e.includes("מייל")));
 });
 
-test("תפריט: צריך בחירה לכל קבוצה שיש בה סועדים", () => {
-  const d = { ...emptyDraft(), vegan_count: 5, celiac_count: 0, menu: { main: { regular: 401 } } };
-  assert.deepEqual(requiredGroups(d), ["regular", "vegan"]);
-  assert.equal(validateMenuStep(d, "main").length, 1);
-  assert.equal(validateMenuStep({ ...d, menu: { main: { regular: 401, vegan: 404 } } }, "main").length, 0);
+// ---------- מנות לטעימה (progress/2026-11-08-0009-tasting-picks.md) ----------
+
+// תפריט מוקטן לבדיקות: במנה העיקרית 5 רגילות (אחת טבעונית) ו-3 ללא גלוטן (אחת טבעונית), כמו בתפריט האמיתי
+const mainMenu = [
+  item(401), item(402), item(403), item(404, { is_vegan: true }), item(405),
+  item(451, { diet: "celiac" }), item(452, { diet: "celiac" }), item(453, { diet: "celiac", is_vegan: true }),
+  item(101, { course: "reception" }), item(105, { course: "reception", is_vegan: true }),
+];
+
+test("טעימה: 3 רגילות ו-2 ללא גלוטן; טבעוניות 2, או כמה שיש אם פחות", () => {
+  assert.equal(requiredPicks(mainMenu, "main", "regular"), 3);
+  assert.equal(requiredPicks(mainMenu, "main", "celiac"), 2);
+  assert.equal(requiredPicks(mainMenu, "main", "vegan"), 2); // 404 ו-453
+  assert.equal(requiredPicks(mainMenu, "reception", "vegan"), 1); // בקבלת הפנים יש רק 105
+});
+
+test("טעימה: השלב לא עובר בלי בדיוק הכמות, לכל קבוצה שיש בה סועדים", () => {
+  const d = { ...emptyDraft(), vegan_count: 5, celiac_count: 2, tasting_picks: { main: { regular: [401, 402], celiac: [451, 452], vegan: [404, 453] } } };
+  assert.deepEqual(requiredGroups(d), ["regular", "celiac", "vegan"]);
+  assert.deepEqual(validateMenuStep(d, "main", mainMenu), ["יש לבחור 3 מנות רגילות לטעימה (נבחרו 2)"]);
+  const ok = { ...d, tasting_picks: { main: { ...d.tasting_picks.main, regular: [401, 402, 403] } } };
+  assert.deepEqual(validateMenuStep(ok, "main", mainMenu), []);
+  // יותר מדי, מנה כפולה או מנה מהתפריט הלא נכון: לא עובר
+  assert.equal(validateMenuStep({ ...ok, tasting_picks: { main: { ...ok.tasting_picks.main, regular: [401, 402, 403, 405] } } }, "main", mainMenu).length, 1);
+  assert.equal(validateMenuStep({ ...ok, tasting_picks: { main: { ...ok.tasting_picks.main, regular: [401, 401, 402] } } }, "main", mainMenu).length, 1);
+  assert.equal(validateMenuStep({ ...ok, tasting_picks: { main: { ...ok.tasting_picks.main, celiac: [451, 401] } } }, "main", mainMenu).length, 1);
+});
+
+test("טעימה: מספר הטועמים בין 2 ל-6", () => {
+  assert.deepEqual(validateGuestsStep({ ...emptyDraft(), tasters: 2 }), []);
+  assert.deepEqual(validateGuestsStep({ ...emptyDraft(), tasters: 6 }), []);
+  assert.equal(validateGuestsStep({ ...emptyDraft(), tasters: 1 }).length, 1);
+  assert.equal(validateGuestsStep({ ...emptyDraft(), tasters: 7 }).length, 1);
+});
+
+test("הזמנה לטעימה: חצי מנה לכל טועם מכל מנה, מנה שנבחרה פעמיים מוכנה פעם אחת", () => {
+  const ing = (menu_item_id: number, category: "beef" | "poultry" | "fish" | "veg", ingredient: string, grams: number) =>
+    ({ menu_item_id, category, ingredient, grams });
+  const menu = [
+    item(401, { beef_g: 250, veg_g: 150, menu_item_ingredients: [ing(401, "beef", "צלי כתף בקר", 250), ing(401, "veg", "תפוחי אדמה", 100), ing(401, "veg", "שעועית ירוקה", 50)] }),
+    item(404, { is_vegan: true, veg_g: 300, menu_item_ingredients: [ing(404, "veg", "גרגרי חומוס", 300)] }),
+  ];
+  const picks: MenuSelection[] = [
+    { course: "main", guest_group: "regular", menu_item_id: 401 },
+    { course: "main", guest_group: "regular", menu_item_id: 404 },
+    { course: "main", guest_group: "vegan", menu_item_id: 404 }, // אותה מנה גם לטבעונים: לא מכפילים
+  ];
+  const order = computeTastingOrder(4, picks, menu);
+  assert.equal(order.dishes.length, 2);
+  assert.deepEqual(order.dishes.find((d) => d.item.id === 404)?.groups, ["regular", "vegan"]);
+  // 4 טועמים × חצי מנה = 2 מנות: בקר 500 גרם, ירקות (150 + 300) × 2 = 900 גרם
+  assert.equal(order.totals.beef, 500);
+  assert.equal(order.totals.veg, 900);
+  assert.deepEqual(order.breakdown.veg, [
+    { ingredient: "גרגרי חומוס", grams: 600 },
+    { ingredient: "תפוחי אדמה", grams: 200 },
+    { ingredient: "שעועית ירוקה", grams: 100 },
+  ]);
+  assert.equal(order.fromFinalMenu, false);
+});
+
+test("הזמנה לטעימה: מעגלים למעלה ל-10 גרם; אירוע ישן בלי מנות לטעימה מקבל את התפריט הסופי", () => {
+  const menu = [item(205, { course: "first", fish_g: 80, veg_g: 5 })];
+  const finalMenu: MenuSelection[] = [{ course: "first", guest_group: "regular", menu_item_id: 205 }];
+  const order = computeTastingOrder(3, [], menu, finalMenu);
+  assert.equal(order.fromFinalMenu, true);
+  assert.equal(order.totals.fish, 120); // 3 × 0.5 × 80 = 120
+  assert.equal(order.totals.veg, 10); // 7.5 → 10
+  assert.deepEqual(order.breakdown.veg, [{ ingredient: "לא מפורט", grams: 10 }]);
 });
 
 // ---------- תאריכים ----------

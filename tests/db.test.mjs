@@ -57,6 +57,7 @@ before(async () => {
   await db.exec(readFileSync("supabase/migrations/0001_schema.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/0002_menu_seed.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/0003_menu_ingredients.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/0004_tasting_picks.sql", "utf8"));
 
   // ---- משתמשים: ההרשמה יוצרת פרופיל דרך הטריגר ----
   for (const [name, id] of Object.entries(U)) {
@@ -214,4 +215,43 @@ test("בקשה «דורשת טיפול» נפתחת רק על אירוע שהמ�
   await assert.rejects(as(U.yossi,
     `insert into change_log (event_id, changed_by, source, summary, needs_attention) values ($1, $2, 'agent', 'בקשה', true)`,
     [danaEvent, U.yossi]));
+});
+
+// ---------- מנות לטעימה (מיגרציה 0004) ----------
+
+test("טעימה: לקוחה בוחרת 3 רגילות לשלב, והרביעית נחסמת במסד", async () => {
+  for (const id of [401, 402, 403])
+    await as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'regular', $2)`, [danaEvent, id]);
+  await assert.rejects(as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'regular', 405)`, [danaEvent]), /עד 3 מנות/);
+  // שלב אחר הוא מניין נפרד
+  await as(U.dana, `insert into event_tasting_picks values ($1, 'first', 'regular', 201)`, [danaEvent]);
+});
+
+test("טעימה: ללא גלוטן עד 2, ומנה חייבת להתאים לקבוצה ולשלב", async () => {
+  await as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'celiac', 451)`, [danaEvent]);
+  await as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'celiac', 452)`, [danaEvent]);
+  await assert.rejects(as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'celiac', 453)`, [danaEvent]), /עד 2 מנות/);
+  await assert.rejects(as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'vegan', 401)`, [danaEvent]), /לא מתאימה/); // 401 לא טבעונית
+  await assert.rejects(as(U.dana, `insert into event_tasting_picks values ($1, 'first', 'regular', 401)`, [danaEvent]), /לא שייכת לשלב/);
+  await as(U.dana, `insert into event_tasting_picks values ($1, 'main', 'vegan', 404)`, [danaEvent]);
+});
+
+test("טעימה: לקוח אחר לא רואה ולא בוחר מנות לאירוע של דנה; השף רואה ולא עורך", async () => {
+  const { rows } = await as(U.yossi, `select count(*)::int as n from event_tasting_picks where event_id = $1`, [danaEvent]);
+  assert.equal(rows[0].n, 0);
+  await assert.rejects(as(U.yossi, `insert into event_tasting_picks values ($1, 'dessert', 'regular', 501)`, [danaEvent]));
+  const chef = await as(U.yuval, `select count(*)::int as n from event_tasting_picks where event_id = $1`, [danaEvent]);
+  assert.equal(chef.rows[0].n, 7);
+  await assert.rejects(as(U.yuval, `insert into event_tasting_picks values ($1, 'dessert', 'regular', 501)`, [danaEvent]));
+});
+
+test("טעימה: מספר הטועמים בין 2 ל-6, ושינוי נרשם ביומן בעברית", async () => {
+  const { rows } = await admin(`select tasters from events where id = $1`, [danaEvent]);
+  assert.equal(rows[0].tasters, 2); // ברירת מחדל
+  await assert.rejects(as(U.dana, `update events set tasters = 7 where id = $1`, [danaEvent]));
+  await assert.rejects(as(U.dana, `update events set tasters = 1 where id = $1`, [danaEvent]));
+  await admin(`update events set created_at = now() - interval '1 hour' where id = $1`, [danaEvent]); // היומן מתעלם מ-3 הדקות הראשונות
+  await as(U.dana, `update events set tasters = 4 where id = $1`, [danaEvent]);
+  const log = await admin(`select summary from change_log where event_id = $1 and field = 'tasters'`, [danaEvent]);
+  assert.match(log.rows[0]?.summary ?? "", /מספר טועמים/);
 });

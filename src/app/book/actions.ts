@@ -1,13 +1,14 @@
 "use server";
 // שמירת ההזמנה בסוף האשף. כל הבדיקות רצות שוב כאן, כי אסור לסמוך על מה שהדפדפן שלח.
-// הסדר: עדכון פרופיל → יצירת אירוע → שמירת תפריט → קביעת טעימה → מיילים.
+// הסדר: עדכון פרופיל → יצירת אירוע → שמירת המנות לטעימה → קביעת טעימה → מיילים.
+// התפריט הסופי לא נשמר כאן: בוחרים אותו אחרי הטעימה, בתיק האירוע (docs/spec.md §3.2).
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, formatDateTimeHe, todayInIsrael } from "@/lib/dates";
 import { validateBooking, type BookingDraft } from "@/lib/validation";
 import { emailsForRoles, sendMailSafe } from "@/lib/notify";
 import { bookedMail, eventName, eventSummary, menuText, siteUrl, tastingMail } from "@/lib/event-text";
-import type { EventRow, GuestGroup, MenuItem, MenuSelection, Profile } from "@/lib/types";
+import type { EventRow, GuestGroup, MenuItem, Profile, TastingPick } from "@/lib/types";
 import { COURSES } from "@/lib/types";
 
 export type BookingResult = { ok: true; eventId: string; warning?: string } | { ok: false; errors: string[] };
@@ -23,7 +24,9 @@ export async function createBooking(draft: BookingDraft): Promise<BookingResult>
   const { count: freeSlots } = await supabase
     .from("tasting_slots").select("id", { count: "exact", head: true })
     .is("event_id", null).gt("starts_at", new Date().toISOString());
-  const errors = validateBooking(draft, today, bookedSet, (freeSlots ?? 0) > 0);
+  const { data: itemRows } = await supabase.from("menu_items").select("*");
+  const items = (itemRows ?? []) as MenuItem[];
+  const errors = validateBooking(draft, today, bookedSet, items, (freeSlots ?? 0) > 0);
   if (errors.length) return { ok: false, errors };
 
   const phones = draft.phones.map((p) => p.trim()).filter(Boolean);
@@ -50,6 +53,7 @@ export async function createBooking(draft: BookingDraft): Promise<BookingResult>
       guest_count: draft.guest_count,
       vegan_count: draft.vegan_count,
       celiac_count: draft.celiac_count,
+      tasters: draft.tasters,
       payment_method: draft.payment_method,
       deposit_confirmed: draft.deposit_confirmed,
       status: "booked",
@@ -61,13 +65,14 @@ export async function createBooking(draft: BookingDraft): Promise<BookingResult>
     return { ok: false, errors: [taken ? "המשבצת נתפסה ברגע זה ע\"י הזמנה אחרת. נא לבחור תאריך או משבצת אחרים" : `שגיאה בשמירה: ${eventError?.message}`] };
   }
 
-  // 3. התפריט
-  const selections: MenuSelection[] = COURSES.flatMap((course) =>
-    Object.entries(draft.menu[course] ?? {})
-      .filter(([, id]) => Boolean(id))
-      .map(([group, id]) => ({ event_id: event.id, course, guest_group: group as GuestGroup, menu_item_id: Number(id) })),
+  // 3. המנות לטעימה. טריגר במסד בודק שוב שהמנה מתאימה לקבוצה ושלא עוברים את המספר המותר
+  const picks: TastingPick[] = COURSES.flatMap((course) =>
+    Object.entries(draft.tasting_picks[course] ?? {}).flatMap(([group, ids]) =>
+      [...new Set(ids ?? [])].map((id) => ({ event_id: event.id, course, guest_group: group as GuestGroup, menu_item_id: Number(id) })),
+    ),
   );
-  await supabase.from("event_menu_selections").insert(selections);
+  const { error: picksError } = await supabase.from("event_tasting_picks").insert(picks);
+  if (picksError) console.error("event_tasting_picks", picksError.message);
 
   // 4. הטעימה
   let warning: string | undefined;
@@ -88,8 +93,7 @@ export async function createBooking(draft: BookingDraft): Promise<BookingResult>
   const { data: freshEvent } = await supabase.from("events").select("*").eq("id", event.id).single();
   const ev = (freshEvent ?? event) as EventRow;
   const client = (updatedProfile ?? profile) as Profile;
-  const { data: items } = await supabase.from("menu_items").select("*");
-  const menu = menuText(selections, (items ?? []) as MenuItem[]);
+  const menu = menuText(picks, items);
 
   const booked1 = bookedMail(ev, client);
   await sendMailSafe({ kind: "event_booked", to: await emailsForRoles(["admin", "event_manager"]).catch(() => []), ...booked1, eventId: ev.id, dedupeKey: `booked:${ev.id}` });
@@ -101,7 +105,7 @@ export async function createBooking(draft: BookingDraft): Promise<BookingResult>
     kind: "client_confirmation",
     to: emails,
     subject: `ההזמנה שלכם התקבלה – ${eventName(ev)}`,
-    body: `תודה שבחרתם בקסם בגלבוע!\n\n${eventSummary(ev)}${tastingStart ? `\nטעימה: ${formatDateTimeHe(tastingStart)}` : ""}\n\nבחירת התפריט:\n${menu}\n\nאפשר לעדכן פרטים ולשוחח עם עוזר האירוע באזור האישי:\n${siteUrl()}/my/events/${ev.id}`,
+    body: `תודה שבחרתם בקסם בגלבוע!\n\n${eventSummary(ev)}${tastingStart ? `\nטעימה: ${formatDateTimeHe(tastingStart)}` : ""}\n\nהמנות שבחרתם לטעימה (${ev.tasters} טועמים):\n${menu}\n\nאת התפריט הסופי בוחרים אחרי הטעימה, בתיק האירוע.\n\nאפשר לעדכן פרטים ולשוחח עם עוזר האירוע באזור האישי:\n${siteUrl()}/my/events/${ev.id}`,
     eventId: ev.id,
     dedupeKey: `confirm:${ev.id}`,
   });

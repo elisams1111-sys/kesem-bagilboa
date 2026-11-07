@@ -8,6 +8,8 @@ import { ChangeLog } from "@/components/event/change-log";
 import { DetailsForm } from "@/components/event/details-form";
 import { MenuEditor } from "@/components/event/menu-editor";
 import { TastingPicker } from "@/components/event/tasting-picker";
+import { TastingDishes } from "@/components/event/tasting-order";
+import { computeTastingOrder } from "@/lib/quantities";
 import { requireRole } from "@/lib/auth";
 import { formatDateHe } from "@/lib/dates";
 import { loadEventFile } from "@/lib/event-data";
@@ -41,11 +43,15 @@ export default async function ClientEventPage({ params }: { params: Promise<{ id
           <section className="card">
             <h2 className="mb-1 text-lg font-semibold">התפריט</h2>
             {file.locked && !past && <p className="mb-3 text-sm text-amber-800">פחות מ-5 ימים לאירוע: שינויים בתפריט דרך מנהלת האירוע.</p>}
-            <MenuEditor eventId={event.id} selections={file.selections} menuItems={file.menuItems} groups={file.groups} editable={!file.locked && !past} />
+            <MenuEditor eventId={event.id} selections={file.selections} picks={file.picks} menuItems={file.menuItems} groups={file.groups} editable={!file.locked && !past} />
           </section>
 
           <section className="card">
             <h2 className="mb-3 text-lg font-semibold">טעימות</h2>
+            <div className="mb-4 rounded-xl bg-cream p-3">
+              <p className="mb-2 text-sm font-medium">המנות שבחרתם לטעום · {event.tasters} טועמים</p>
+              <TastingDishes order={computeTastingOrder(event.tasters, file.picks, file.menuItems)} />
+            </div>
             {past ? (
               <p className="text-muted">האירוע כבר עבר.</p>
             ) : (

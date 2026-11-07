@@ -5,8 +5,8 @@
 // מקבלת את המנה שנבחרה עבורה. כמות = מספר סועדים בקבוצה × גרמים למנה, ועוד רזרבה של 5%.
 // בנוסף לסכום לכל סוג, יש פירוט לפי רכיב (עגבניות, פילה בקר וכו'), מתוך item.menu_item_ingredients.
 
-import type { Course, GuestGroup, IngredientCategory, MenuItem, MenuSelection } from "./types.ts";
-import { COURSES } from "./types.ts";
+import type { Course, GuestGroup, IngredientCategory, MenuItem, MenuSelection, TastingPick } from "./types.ts";
+import { COURSES, TASTING_PORTION } from "./types.ts";
 
 export const CATEGORIES: IngredientCategory[] = ["beef", "poultry", "fish", "veg"];
 export const CATEGORY_LABELS: Record<IngredientCategory, string> = {
@@ -63,6 +63,34 @@ export interface OrderResult {
   warnings: string[];
 }
 
+/** סוכם גרמים של מנות: לכל סוג, ולכל רכיב בתוך הסוג. משותף להזמנה לאירוע ולהזמנה לטעימה */
+function createTally() {
+  const grams: Record<IngredientCategory, number> = { beef: 0, poultry: 0, fish: 0, veg: 0 };
+  // גרמים לכל רכיב בכל סוג
+  const perIngredient: Record<IngredientCategory, Map<string, number>> = {
+    beef: new Map(), poultry: new Map(), fish: new Map(), veg: new Map(),
+  };
+  const addIngredient = (cat: IngredientCategory, name: string, g: number) =>
+    perIngredient[cat].set(name, (perIngredient[cat].get(name) ?? 0) + g);
+
+  /** מוסיף מנה × מספר מנות (servings יכול להיות שבר, למשל חצי מנה בטעימה) */
+  function add(item: MenuItem, servings: number) {
+    for (const cat of CATEGORIES) {
+      const total = item[GRAMS_FIELD[cat]];
+      grams[cat] += total * servings;
+      let listed = 0;
+      for (const ing of item.menu_item_ingredients ?? []) {
+        if (ing.category !== cat) continue;
+        addIngredient(cat, ing.ingredient, ing.grams * servings);
+        listed += ing.grams;
+      }
+      // מה שהמנה מחייבת ולא פורט לרכיבים, נספר ב«לא מפורט». כך הפירוט תמיד מסתכם לסכום של הסוג
+      if (total > listed) addIngredient(cat, UNSPECIFIED, (total - listed) * servings);
+    }
+  }
+  return { grams, perIngredient, add };
+}
+
 /** עיגול לק"ג עם ספרה אחת אחרי הנקודה, כלפי מעלה (עדיף מעט יותר מאשר חסר). */
 function toKg(grams: number): number {
   return Math.ceil((grams * (1 + BUFFER)) / 100) / 10;
@@ -79,13 +107,8 @@ export function computeOrder(
   const byId = new Map(menuItems.map((m) => [m.id, m]));
   const lines: CourseLine[] = [];
   const warnings: string[] = [];
-  const grams = { beef: 0, poultry: 0, fish: 0, veg: 0 };
-  // גרמים לכל רכיב בכל סוג. Map שומר על סדר ההכנסה, וממילא ממיינים בסוף
-  const perIngredient: Record<IngredientCategory, Map<string, number>> = {
-    beef: new Map(), poultry: new Map(), fish: new Map(), veg: new Map(),
-  };
-  const addIngredient = (cat: IngredientCategory, name: string, g: number) =>
-    perIngredient[cat].set(name, (perIngredient[cat].get(name) ?? 0) + g);
+  const tally = createTally();
+  const { grams, perIngredient } = tally;
 
   const pick = (course: Course, group: GuestGroup) => {
     const sel = selections.find((s) => s.course === course && s.guest_group === group);
@@ -108,21 +131,7 @@ export function computeOrder(
       if (!item) {
         warnings.push(`לא נבחרה מנה ל${courseName(course)}`);
       } else {
-        grams.beef += item.beef_g * guests;
-        grams.poultry += item.poultry_g * guests;
-        grams.fish += item.fish_g * guests;
-        grams.veg += item.veg_g * guests;
-        for (const cat of CATEGORIES) {
-          const total = item[GRAMS_FIELD[cat]];
-          let listed = 0;
-          for (const ing of item.menu_item_ingredients ?? []) {
-            if (ing.category !== cat) continue;
-            addIngredient(cat, ing.ingredient, ing.grams * guests);
-            listed += ing.grams;
-          }
-          // מה שהמנה מחייבת ולא פורט לרכיבים, נספר ב«לא מפורט». כך הפירוט תמיד מסתכם לסכום של הסוג
-          if (total > listed) addIngredient(cat, UNSPECIFIED, (total - listed) * guests);
-        }
+        tally.add(item, guests);
       }
       lines.push({ course, group, guests, item, fellBackToRegular: fellBack });
     }
@@ -150,10 +159,80 @@ export function computeOrder(
 /** ממיר גרמים לשורות בק"ג: מהגדול לקטן, ו«לא מפורט» בסוף. כל רכיב מעוגל למעלה בנפרד,
  *  ולכן סכום השורות יכול לצאת עד 0.1 ק"ג לרכיב יותר מהסכום של הסוג. זה מכוון: עדיף מעט יותר מאשר חסר */
 function toLines(map: Map<string, number>): IngredientLine[] {
-  return [...map]
-    .map(([ingredient, g]) => ({ ingredient, kg: toKg(g) }))
-    .sort((a, b) =>
-      a.ingredient === UNSPECIFIED ? 1 : b.ingredient === UNSPECIFIED ? -1 : b.kg - a.kg || a.ingredient.localeCompare(b.ingredient, "he"));
+  return [...map].map(([ingredient, g]) => ({ ingredient, kg: toKg(g) })).sort(byAmount((l) => l.kg));
+}
+
+/** מהגדול לקטן, ובשוויון לפי א"ב. «לא מפורט» תמיד בסוף */
+function byAmount<T extends { ingredient: string }>(amount: (x: T) => number) {
+  return (a: T, b: T) =>
+    a.ingredient === UNSPECIFIED ? 1 : b.ingredient === UNSPECIFIED ? -1 : amount(b) - amount(a) || a.ingredient.localeCompare(b.ingredient, "he");
+}
+
+// ---------- הזמנה לטעימה ----------
+
+export interface TastingDish {
+  course: Course;
+  item: MenuItem;
+  groups: GuestGroup[]; // לאילו קבוצות המנה נבחרה (מנה טבעונית יכולה להיבחר גם כרגילה)
+}
+
+export interface TastingOrder {
+  tasters: number;
+  dishes: TastingDish[];
+  /** גרמים לכל סוג, ולכל רכיב בתוך הסוג. בלי רזרבה, מעוגל למעלה ל-10 גרם */
+  totals: Record<IngredientCategory, number>;
+  breakdown: Record<IngredientCategory, { ingredient: string; grams: number }[]>;
+  /** true כשאין מנות שנבחרו לטעימה, ולכן הוצג התפריט הסופי (אירועים שהוזמנו לפני שהיו מנות לטעימה) */
+  fromFinalMenu: boolean;
+}
+
+/** עיגול למעלה ל-10 גרם. בטעימה הכמויות קטנות, ולכן גרמים ולא ק"ג */
+const toTens = (g: number) => Math.ceil(g / 10) * 10;
+
+/**
+ * כמה להכין לטעימה: כל טועם מקבל חצי מנה (TASTING_PORTION) מכל מנה שנבחרה.
+ * מנה שנבחרה לכמה קבוצות (למשל רגילה וגם טבעונית) מוכנה פעם אחת.
+ * אם לאירוע אין מנות לטעימה, משתמשים בתפריט הסופי (fallbackSelections).
+ */
+export function computeTastingOrder(
+  tasters: number,
+  picks: TastingPick[],
+  menuItems: MenuItem[],
+  fallbackSelections: MenuSelection[] = [],
+): TastingOrder {
+  const byId = new Map(menuItems.map((m) => [m.id, m]));
+  const fromFinalMenu = picks.length === 0 && fallbackSelections.length > 0;
+  const source = picks.length ? picks : fallbackSelections;
+
+  // מאחדים לפי מנה, ושומרים לאילו קבוצות היא נבחרה
+  const dishes = new Map<number, TastingDish>();
+  for (const p of source) {
+    const item = byId.get(p.menu_item_id);
+    if (!item) continue;
+    const dish = dishes.get(item.id) ?? { course: p.course, item, groups: [] };
+    if (!dish.groups.includes(p.guest_group)) dish.groups.push(p.guest_group);
+    dishes.set(item.id, dish);
+  }
+  const ordered = [...dishes.values()].sort((a, b) => COURSES.indexOf(a.course) - COURSES.indexOf(b.course) || a.item.id - b.item.id);
+
+  const tally = createTally();
+  for (const d of ordered) tally.add(d.item, tasters * TASTING_PORTION);
+
+  const lines = (map: Map<string, number>) =>
+    [...map].map(([ingredient, g]) => ({ ingredient, grams: toTens(g) })).sort(byAmount((l) => l.grams));
+  return {
+    tasters,
+    dishes: ordered,
+    totals: {
+      beef: toTens(tally.grams.beef), poultry: toTens(tally.grams.poultry),
+      fish: toTens(tally.grams.fish), veg: toTens(tally.grams.veg),
+    },
+    breakdown: {
+      beef: lines(tally.perIngredient.beef), poultry: lines(tally.perIngredient.poultry),
+      fish: lines(tally.perIngredient.fish), veg: lines(tally.perIngredient.veg),
+    },
+    fromFinalMenu,
+  };
 }
 
 function courseName(c: Course): string {

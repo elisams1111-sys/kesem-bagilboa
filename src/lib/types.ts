@@ -39,6 +39,7 @@ export interface EventRow {
   payment_method: string | null;
   deposit_confirmed: boolean;
   status: EventStatus;
+  tasters: number; // כמה אנשים מגיעים לטעימה, 2 עד 6
   last_change_source: "app" | "agent" | "system";
   created_at: string;
   updated_at: string;
@@ -161,3 +162,13 @@ export const GROUP_LABELS: Record<GuestGroup, string> = {
 export const STAFF_ROLES: UserRole[] = ["sales", "event_manager", "chef", "admin"];
 export const MAX_GUESTS = 500;
 export const MAX_CONTACTS = 3;
+
+// ---------- טעימה (progress/2026-11-08-0009-tasting-picks.md) ----------
+/** כמה מנות בוחרים לטעימה בכל שלב, לכל קבוצת סועדים. המסד אוכף את אותם מספרים (טריגר check_tasting_pick) */
+export const TASTING_PICKS: Record<GuestGroup, number> = { regular: 3, celiac: 2, vegan: 2 };
+export const MIN_TASTERS = 2;
+export const MAX_TASTERS = 6;
+/** כל טועם מקבל חצי מנה רגילה מכל מנה שנבחרה לטעימה */
+export const TASTING_PORTION = 0.5;
+/** מנה שנבחרה לטעימה: אותו מבנה כמו בחירה בתפריט הסופי, אבל כמה מנות לכל שלב וקבוצה */
+export type TastingPick = MenuSelection;
