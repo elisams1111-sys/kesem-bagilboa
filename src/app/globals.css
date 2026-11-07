@@ -49,3 +49,105 @@ body {
 .table-std td {
   @apply border-b border-line px-3 py-2 text-sm align-top;
 }
+
+/* ---------- כפתור CTA בולט לדף הנחיתה ----------
+   מותאם מהרכיב Shiny Button של hyperiux ב-21st.dev: מסגרת conic-gradient מסתובבת וברק שעובר על הכפתור.
+   @property מאפשר להנפיש זווית בתוך גרדיאנט, בלי JavaScript. */
+@property --cta-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.cta-shiny {
+  --cta-fill: #dcb661;
+  --cta-text: var(--color-brand-dark);
+  --cta-glow: rgb(220 182 97 / 0.45);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 4rem;
+  padding: 1rem 2.5rem;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--cta-text);
+  background:
+    linear-gradient(var(--cta-fill), var(--cta-fill)) padding-box,
+    conic-gradient(from var(--cta-angle), var(--cta-fill), #fff 8%, var(--cta-fill) 18%) border-box;
+  box-shadow: 0 10px 36px var(--cta-glow);
+  animation: cta-spin 3s linear infinite;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+/* במחשב הכותרת ענקית, ולכן גם הכפתור גדל. בנייד הוא כבר ברוחב מלא */
+@media (min-width: 1024px) {
+  .cta-shiny {
+    min-height: 5rem;
+    padding-inline: 3rem;
+    font-size: 1.625rem;
+  }
+}
+/* הברק: פס אור אלכסוני שחוצה את הכפתור */
+.cta-shiny::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: -1;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.4), transparent);
+  animation: cta-sheen 3.5s ease-in-out infinite;
+}
+.cta-shiny:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 48px var(--cta-glow);
+}
+.cta-shiny:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+.cta-shiny svg {
+  transition: transform 0.2s ease;
+}
+.cta-shiny:hover svg {
+  transform: translateX(-4px);
+}
+@keyframes cta-spin {
+  to {
+    --cta-angle: 360deg;
+  }
+}
+@keyframes cta-sheen {
+  from {
+    transform: translateX(-260%);
+  }
+  60%,
+  to {
+    transform: translateX(260%);
+  }
+}
+
+/* אורות באיורים: מהבהבים בעדינות, כל נורה בקצב קצת אחר */
+.string-light {
+  animation: twinkle 3.2s ease-in-out infinite;
+}
+@keyframes twinkle {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta-shiny,
+  .string-light {
+    animation: none;
+  }
+  .cta-shiny::after {
+    display: none;
+  }
+}
