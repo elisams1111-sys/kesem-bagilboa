@@ -20,7 +20,7 @@ export default async function KitchenPage() {
 
   const [{ data: evData }, { data: items }, { data: tastings }] = await Promise.all([
     supabase.from("events").select("*, event_menu_selections(*)").gte("event_date", today).lte("event_date", addDays(today, 14)).neq("status", "cancelled").order("event_date"),
-    supabase.from("menu_items").select("*"),
+    supabase.from("menu_items").select("*, menu_item_ingredients(*)"), // כולל פירוט רכיבים לחישוב ההזמנה
     supabase.from("tasting_slots").select("starts_at, event_id, events(title, event_type, event_type_other, guest_count)").not("event_id", "is", null)
       .gte("starts_at", new Date().toISOString()).order("starts_at").limit(10),
   ]);

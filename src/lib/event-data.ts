@@ -14,7 +14,7 @@ export async function loadEventFile(eventId: string, viewerId: string, withOutbo
   const [client, selections, items, tasting, freeSlots, changes, chat, outbox] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", ev.client_id).maybeSingle(),
     supabase.from("event_menu_selections").select("*").eq("event_id", eventId),
-    supabase.from("menu_items").select("*").order("id"),
+    supabase.from("menu_items").select("*, menu_item_ingredients(*)").order("id"), // כולל פירוט רכיבים לחישוב ההזמנה
     supabase.from("tasting_slots").select("*").eq("event_id", eventId).maybeSingle(),
     supabase.from("tasting_slots").select("*").is("event_id", null).gt("starts_at", new Date().toISOString()).order("starts_at").limit(60),
     supabase.from("change_log").select("*").eq("event_id", eventId).order("created_at", { ascending: false }).limit(100),

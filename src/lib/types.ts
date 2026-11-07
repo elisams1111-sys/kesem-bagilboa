@@ -56,6 +56,18 @@ export interface MenuItem {
   poultry_g: number;
   fish_g: number;
   veg_g: number;
+  /** פירוט לפי רכיב (טבלת menu_item_ingredients). מגיע רק כשהשאילתה מבקשת אותו: select("*, menu_item_ingredients(*)") */
+  menu_item_ingredients?: MenuIngredient[];
+}
+
+/** 4 הסוגים בחישוב ההזמנה לשף, כמו העמודות beef_g, poultry_g, fish_g ו-veg_g */
+export type IngredientCategory = "beef" | "poultry" | "fish" | "veg";
+
+export interface MenuIngredient {
+  menu_item_id: number;
+  category: IngredientCategory;
+  ingredient: string;
+  grams: number; // לסועד
 }
 
 export interface MenuSelection {

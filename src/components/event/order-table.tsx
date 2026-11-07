@@ -1,23 +1,29 @@
-// חישוב ההזמנה לשף: סה"כ ק"ג לכל סוג חומר גלם, ופירוט לפי שלב וקבוצת סועדים
+// חישוב ההזמנה לשף: סה"כ ק"ג לכל סוג חומר גלם, ומתחתיו פירוט לפי רכיב. בנוסף, פירוט לפי שלב וקבוצת סועדים
 import { Badge } from "@/components/ui";
-import { BUFFER, type OrderResult } from "@/lib/quantities";
+import { BUFFER, CATEGORIES, CATEGORY_LABELS, UNSPECIFIED, type OrderResult } from "@/lib/quantities";
 import { COURSE_LABELS, GROUP_LABELS } from "@/lib/types";
 
 export function OrderTable({ order, compact = false }: { order: OrderResult; compact?: boolean }) {
   const t = order.totals;
-  const totals = [
-    ["בקר / בשר אדום", t.beef_kg],
-    ["עוף", t.poultry_kg],
-    ["דגים", t.fish_kg],
-    ["ירקות ופירות", t.veg_kg],
-  ] as const;
+  const totalKg = { beef: t.beef_kg, poultry: t.poultry_kg, fish: t.fish_kg, veg: t.veg_kg };
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {totals.map(([label, kg]) => (
-          <div key={label} className="rounded-xl border border-line bg-cream p-3">
-            <div className="text-xs text-muted">{label}</div>
-            <div className="font-display text-2xl font-bold text-brand">{kg} <span className="text-sm font-normal">ק״ג</span></div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {CATEGORIES.map((cat) => (
+          <div key={cat} className="rounded-xl border border-line bg-cream p-3">
+            <div className="text-xs text-muted">{CATEGORY_LABELS[cat]}</div>
+            <div className="font-display text-2xl font-bold text-brand">{totalKg[cat]} <span className="text-sm font-normal">ק״ג</span></div>
+            {order.breakdown[cat].length > 0 && (
+              <ul className="mt-2 space-y-1 border-t border-line pt-2 text-sm">
+                {order.breakdown[cat].map((l) => (
+                  <li key={l.ingredient} className="flex justify-between gap-3">
+                    <span className={l.ingredient === UNSPECIFIED ? "text-muted" : ""}>{l.ingredient}</span>
+                    {/* tabular-nums: הספרות באותו רוחב, כך שהמספרים מיושרים בעמודה */}
+                    <span className="shrink-0 tabular-nums">{l.kg} ק״ג</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ))}
       </div>

@@ -24,7 +24,7 @@ export async function runDailyJobs(now = new Date()): Promise<JobReport> {
     emailsForRoles(["event_manager"]),
     emailsForRoles(["admin"]),
   ]);
-  const { data: items } = await admin.from("menu_items").select("*");
+  const { data: items } = await admin.from("menu_items").select("*, menu_item_ingredients(*)"); // כולל פירוט רכיבים למייל לשף
   const menuItems = (items ?? []) as MenuItem[];
 
   // 1. השף: כל אירוע שנמצא בעוד 5 ימים או פחות ועוד לא קיבל מייל (dedupe לכל אירוע)

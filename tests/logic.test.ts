@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { computeOrder, splitGuests } from "../src/lib/quantities.ts";
+import { computeOrder, formatOrderText, splitGuests } from "../src/lib/quantities.ts";
 import type { MenuItem, MenuSelection } from "../src/lib/types.ts";
 import {
   emptyDraft, requiredGroups, validateContactStep, validateGuestsStep, validateMenuStep,
@@ -54,6 +54,62 @@ test("אין מנה לצליאק: סופרים את הרגילה ומתריעי�
 test("שלב בלי שום בחירה מופיע באזהרות", () => {
   const order = computeOrder(50, 0, 0, [], []);
   assert.ok(order.warnings.some((w) => w.includes("קבלת הפנים")));
+});
+
+// ---------- פירוט לפי רכיב ----------
+
+const ing = (menu_item_id: number, category: "beef" | "poultry" | "fish" | "veg", ingredient: string, grams: number) =>
+  ({ menu_item_id, category, ingredient, grams });
+
+test("פירוט ירקות: אותו רכיב משתי מנות מתאחד לשורה אחת, מהגדול לקטן", () => {
+  const menu = [
+    item(1, { course: "first", veg_g: 120, menu_item_ingredients: [ing(1, "veg", "עגבניות שרי", 80), ing(1, "veg", "בצל סגול", 40)] }),
+    item(2, { course: "main", beef_g: 250, veg_g: 100, menu_item_ingredients: [ing(2, "beef", "צלי כתף בקר", 250), ing(2, "veg", "עגבניות שרי", 100)] }),
+  ];
+  const sel: MenuSelection[] = [
+    { course: "first", guest_group: "regular", menu_item_id: 1 },
+    { course: "main", guest_group: "regular", menu_item_id: 2 },
+  ];
+  const order = computeOrder(100, 0, 0, sel, menu);
+  // עגבניות שרי: 100 × (80 + 100) = 18,000 גרם × 1.05 = 18.9 ק"ג
+  assert.deepEqual(order.breakdown.veg, [
+    { ingredient: "עגבניות שרי", kg: 18.9 },
+    { ingredient: "בצל סגול", kg: 4.2 },
+  ]);
+  assert.deepEqual(order.breakdown.beef, [{ ingredient: "צלי כתף בקר", kg: 26.3 }]);
+  assert.deepEqual(order.breakdown.fish, []);
+  assert.equal(order.totals.veg_kg, 23.1); // הסכום של הסוג לא השתנה בגלל הפירוט
+});
+
+test("מנה בלי פירוט, או עם פירוט חלקי: היתרה נספרת ב«לא מפורט» ומופיעה אחרונה", () => {
+  const menu = [item(1, { veg_g: 100, menu_item_ingredients: [ing(1, "veg", "גזר", 70)] })];
+  const sel: MenuSelection[] = [{ course: "main", guest_group: "regular", menu_item_id: 1 }];
+  const order = computeOrder(10, 0, 0, sel, menu);
+  assert.deepEqual(order.breakdown.veg, [
+    { ingredient: "גזר", kg: 0.8 }, // 700 × 1.05 = 735 → 0.8
+    { ingredient: "לא מפורט", kg: 0.4 }, // 300 × 1.05 = 315 → 0.4
+  ]);
+});
+
+test("טבעונים: הפירוט מגיע מהמנה הטבעונית שלהם, לא מהרגילה", () => {
+  const menu = [
+    item(1, { poultry_g: 300, menu_item_ingredients: [ing(1, "poultry", "כרעי עוף", 300)] }),
+    item(2, { veg_g: 300, is_vegan: true, menu_item_ingredients: [ing(2, "veg", "גרגרי חומוס", 300)] }),
+  ];
+  const sel: MenuSelection[] = [
+    { course: "main", guest_group: "regular", menu_item_id: 1 },
+    { course: "main", guest_group: "vegan", menu_item_id: 2 },
+  ];
+  const order = computeOrder(50, 10, 0, sel, menu);
+  assert.deepEqual(order.breakdown.poultry, [{ ingredient: "כרעי עוף", kg: 12.6 }]); // 40 × 300 = 12,000 → 12.6
+  assert.deepEqual(order.breakdown.veg, [{ ingredient: "גרגרי חומוס", kg: 3.2 }]); // 10 × 300 = 3,000 → 3.2
+});
+
+test("המייל לשף כולל את הפירוט מתחת לכל סוג", () => {
+  const menu = [item(1, { fish_g: 200, menu_item_ingredients: [ing(1, "fish", "סלמון", 200)] })];
+  const sel: MenuSelection[] = [{ course: "main", guest_group: "regular", menu_item_id: 1 }];
+  const text = formatOrderText(computeOrder(10, 0, 0, sel, menu));
+  assert.match(text, /דגים: 2\.1 ק"ג\n {2}- סלמון: 2\.1 ק"ג/);
 });
 
 // ---------- בדיקות טופס ההזמנה ----------

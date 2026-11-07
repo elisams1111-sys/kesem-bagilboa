@@ -56,6 +56,7 @@ before(async () => {
   // ---- המיגרציות של הפרויקט, בדיוק כמו שירוצו ב-Supabase ----
   await db.exec(readFileSync("supabase/migrations/0001_schema.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/0002_menu_seed.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/0003_menu_ingredients.sql", "utf8"));
 
   // ---- משתמשים: ההרשמה יוצרת פרופיל דרך הטריגר ----
   for (const [name, id] of Object.entries(U)) {
@@ -78,6 +79,35 @@ test("ההרשמה יצרה פרופיל לקוח עם הטלפון והמייל
 test("נטענו 40 מנות (5 רגילות + 3 ללא גלוטן × 5 שלבים) מתיקיית התפריטים, ואורח יכול לקרוא אותן", async () => {
   const { rows } = await as(null, `select count(*)::int as n from menu_items`);
   assert.equal(rows[0].n, 40);
+});
+
+test("פירוט רכיבים: בכל מנה, סכום הרכיבים מכל סוג שווה בדיוק לגרמים של המנה", async () => {
+  // full join: תופס גם מנה שיש לה גרמים בלי רכיבים, וגם רכיבים בסוג שבו למנה אין גרמים
+  const { rows } = await admin(`
+    with expected as (
+      select id, c.category, c.grams from menu_items
+      cross join lateral (values ('beef', beef_g), ('poultry', poultry_g), ('fish', fish_g), ('veg', veg_g)) as c(category, grams)
+      where c.grams > 0
+    ), listed as (
+      select menu_item_id as id, category, sum(grams)::int as grams from menu_item_ingredients group by 1, 2
+    )
+    select coalesce(e.id, l.id) as id, coalesce(e.category, l.category) as category, e.grams as expected, l.grams as listed
+    from expected e full join listed l on e.id = l.id and e.category = l.category
+    where e.grams is distinct from l.grams`);
+  assert.deepEqual(rows, [], `מנות שהפירוט שלהן לא מסתכם: ${JSON.stringify(rows)}`);
+});
+
+test("פירוט רכיבים: כולם קוראים, השף עורך, לקוחה לא עורכת", async () => {
+  const { rows } = await as(null, `select count(*)::int as n from menu_item_ingredients`);
+  assert.ok(rows[0].n > 100);
+  const tomatoes = `select grams from menu_item_ingredients where menu_item_id = 301 and ingredient = 'עגבניות'`;
+  await as(U.yuval, `update menu_item_ingredients set grams = 100 where menu_item_id = 301 and ingredient = 'עגבניות'`);
+  assert.equal((await admin(tomatoes)).rows[0].grams, 100); // השף שינה מ-105 ל-100
+  // לקוחה: RLS מסנן את השורות, ולכן העדכון לא נכשל אלא פשוט לא משנה כלום
+  await as(U.dana, `update menu_item_ingredients set grams = 1 where menu_item_id = 301 and ingredient = 'עגבניות'`);
+  await assert.rejects(as(U.dana, `insert into menu_item_ingredients values (301, 'veg', 'חציל', 10)`));
+  assert.equal((await admin(tomatoes)).rows[0].grams, 100);
+  await admin(`update menu_item_ingredients set grams = 105 where menu_item_id = 301 and ingredient = 'עגבניות'`); // מחזירים
 });
 
 let danaEvent;
