@@ -4,6 +4,7 @@ import Link from "next/link";
 import { homeFor } from "@/lib/auth";
 import type { Profile } from "@/lib/types";
 import { Karantina } from "next/font/google";
+import { PhoneLink, SocialLinks } from "./contact";
 import { TableScene } from "./scenes";
 
 // הגופן של שם האולם: Karantina, צר ודרמטי כמו שלט. מ-Google Fonts עם תמיכה בעברית
@@ -41,9 +42,16 @@ export function Landing({ profile }: { profile: Profile | null }) {
             ),
           )}
         </Link>
+        {/* במחשב: חיוג בפינה הימנית ורשתות בשמאלית, משני צדי שם האולם. בנייד הם מתחת לכפתורים */}
+        <div className="absolute start-5 top-5 hidden md:block lg:start-10">
+          <PhoneLink />
+        </div>
+        <div className="absolute end-5 top-5 hidden md:block lg:end-10">
+          <SocialLinks />
+        </div>
       </nav>
-      <div className="relative mx-auto mt-auto flex w-full max-w-7xl flex-col gap-8 px-5 pb-10 md:px-10 md:pb-14 lg:flex-row lg:items-end lg:justify-between">
-        <h1 className="font-display text-5xl font-bold leading-[1.05] text-balance [text-shadow:0_2px_18px_rgb(0_0_0/0.8)] sm:text-6xl lg:text-[min(6rem,10.5vh)]">
+      <div className="relative mx-auto mt-auto flex w-full max-w-7xl flex-col gap-6 px-5 lg:gap-8 pb-10 md:px-10 md:pb-14 lg:flex-row lg:items-end lg:justify-between">
+        <h1 className="font-display text-[2.6rem] font-bold leading-[1.05] text-balance [text-shadow:0_2px_18px_rgb(0_0_0/0.8)] sm:text-6xl lg:text-[min(6rem,10.5vh)]">
           יש אירועים שזוכרים כל החיים.
           <span className="mt-3 block text-[#f1d08a]">שלכם עדיין פנוי ביומן.</span>
         </h1>
@@ -58,6 +66,10 @@ export function Landing({ profile }: { profile: Profile | null }) {
           <Link href={secondaryHref} className="btn min-h-14 rounded-full border-2 border-white/70 px-8 text-lg font-semibold text-white backdrop-blur-sm hover:bg-white hover:text-brand-dark focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-white">
             {secondaryLabel}
           </Link>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1 md:hidden">
+            <PhoneLink compact />
+            <SocialLinks />
+          </div>
         </div>
       </div>
     </main>
