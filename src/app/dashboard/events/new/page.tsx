@@ -1,4 +1,4 @@
-// פתיחת אירוע ע"י איש מכירות ללקוח קיים (בעבר: מחברת של איש המכירות)
+// פתיחת אירוע ע"י איש מכירות, ללקוח קיים או חדש (בעבר: מחברת של איש המכירות)
 import { PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -15,7 +15,7 @@ export default async function NewEventPage() {
   ]);
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="אירוע חדש" subtitle="פתיחת תיק אירוע ללקוח רשום. הלקוח יראה אותו מיד באזור האישי שלו." />
+      <PageHeader title="אירוע חדש" subtitle="פתיחת תיק אירוע ללקוח רשום או ללקוח חדש. הלקוח יראה אותו מיד באזור האישי שלו." />
       <NewEventForm
         today={today}
         clients={(clients ?? []).map((c) => ({ id: c.id, label: `${c.full_name || "ללא שם"} · ${c.emails?.[0] ?? ""}` }))}

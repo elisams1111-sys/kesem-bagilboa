@@ -1,10 +1,43 @@
 "use server";
+import { randomBytes } from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
+import { createAdminClient, hasAdminKey } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { emailsForRoles, sendMailSafe } from "@/lib/notify";
 import { bookedMail } from "@/lib/event-text";
-import { emptyDraft, validateGuestsStep, validateTypeStep } from "@/lib/validation";
+import { emptyDraft, validateGuestsStep, validateNewClient, validateTypeStep } from "@/lib/validation";
 import type { EventRow, EventType, Profile, TimeSlot } from "@/lib/types";
+
+/**
+ * יוצר חשבון לקוח חדש. רק המפתח הסודי יכול ליצור משתמש בשם מישהו אחר, ולכן בדיקת התפקיד כאן היא קו ההגנה.
+ * התפקיד לא מגיע מהטופס: טריגר ההרשמה במסד יוצר פרופיל עם ברירת המחדל client.
+ */
+export async function createClientAccount(f: { full_name: string; phone: string; email: string }): Promise<
+  { ok: true; client: { id: string; label: string }; tempPassword: string } | { ok: false; error: string }
+> {
+  await requireRole(["sales", "event_manager", "admin"]);
+  const errs = validateNewClient(f);
+  if (errs.length) return { ok: false, error: errs.join(", ") };
+  if (!hasAdminKey()) return { ok: false, error: "השרת לא מוגדר ליצירת משתמשים (חסר SUPABASE_SECRET_KEY)" };
+
+  const full_name = f.full_name.trim();
+  const email = f.email.trim().toLowerCase();
+  // 9 בתים אקראיים = 12 תווים. הסיסמה חוזרת פעם אחת למסך, ולא נשמרת ולא נכתבת ללוג
+  const tempPassword = randomBytes(9).toString("base64url");
+  const { data, error } = await createAdminClient().auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true, // בלי אישור במייל: שירות המייל המובנה של Supabase שולח רק לחברי הצוות
+    user_metadata: { full_name, phones: [f.phone.trim()] },
+  });
+  if (error || !data.user) {
+    const taken = error?.code === "email_exists" || error?.code === "user_already_exists";
+    return { ok: false, error: taken ? "כתובת המייל הזו כבר רשומה. אפשר לבחור את הלקוח מהרשימה" : "יצירת הלקוח נכשלה. נסו שוב" };
+  }
+  revalidatePath("/dashboard/events/new");
+  return { ok: true, client: { id: data.user.id, label: `${full_name} · ${email}` }, tempPassword };
+}
 
 export async function createEventForClient(f: {
   client_id: string; event_date: string; time_slot: TimeSlot | ""; event_type: EventType | ""; event_type_other: string;

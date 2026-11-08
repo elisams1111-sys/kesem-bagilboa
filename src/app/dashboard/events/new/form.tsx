@@ -6,9 +6,11 @@ import { emptyDraft, validateDateStep, validateGuestsStep, validateSlotStep, val
 import type { EventType, TimeSlot } from "@/lib/types";
 import { EVENT_TYPE_LABELS, SLOT_LABELS } from "@/lib/types";
 import { createEventForClient } from "./actions";
+import { NewClientPanel } from "./new-client-panel";
 
-export function NewEventForm({ today, clients, booked }: { today: string; clients: { id: string; label: string }[]; booked: string[] }) {
+export function NewEventForm({ today, clients: initialClients, booked }: { today: string; clients: { id: string; label: string }[]; booked: string[] }) {
   const router = useRouter();
+  const [clients, setClients] = useState(initialClients);
   const bookedSet = useMemo(() => new Set(booked), [booked]);
   const [f, setF] = useState({ client_id: "", event_date: "", time_slot: "" as TimeSlot | "", event_type: "" as EventType | "", event_type_other: "", title: "", guest_count: 100, vegan_count: 0, celiac_count: 0 });
   const [errors, setErrors] = useState<string[]>([]);
@@ -32,6 +34,9 @@ export function NewEventForm({ today, clients, booked }: { today: string; client
   }
 
   return (
+    <div className="space-y-4">
+    {/* לקוח שנוסף מופיע מיד ברשימה ונבחר, ואפשר להמשיך ישר לפתיחת האירוע */}
+    <NewClientPanel onCreated={(c) => { setClients((list) => [...list, c]); setF((cur) => ({ ...cur, client_id: c.id })); setErrors([]); }} />
     <form onSubmit={submit} className="card space-y-4">
       <div>
         <label className="label" htmlFor="client">לקוח</label>
@@ -39,7 +44,6 @@ export function NewEventForm({ today, clients, booked }: { today: string; client
           <option value="">בחירה…</option>
           {clients.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
-        <p className="mt-1 text-xs text-muted">לקוח חדש נרשם בעצמו בדף ההרשמה ומופיע כאן מיד.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
@@ -88,5 +92,6 @@ export function NewEventForm({ today, clients, booked }: { today: string; client
       <ErrorList errors={errors} />
       <button className="btn-primary" disabled={pending}>{pending ? "שומרים…" : "פתיחת האירוע"}</button>
     </form>
+    </div>
   );
 }

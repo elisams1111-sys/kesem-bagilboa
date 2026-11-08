@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { computeOrder, computeTastingOrder, formatOrderText, splitGuests } from "../src/lib/quantities.ts";
 import type { MenuItem, MenuSelection } from "../src/lib/types.ts";
 import {
-  emptyDraft, requiredGroups, requiredPicks, validateContactStep, validateGuestsStep, validateMenuStep,
+  emptyDraft, requiredGroups, requiredPicks, validateContactStep, validateGuestsStep, validateMenuStep, validateNewClient,
   validateSlotStep, validateTypeStep, validateDateStep,
 } from "../src/lib/validation.ts";
 import { addDays, daysBetween, googleCalendarLink, isBusinessHours, monthGrid, todayInIsrael } from "../src/lib/dates.ts";
@@ -219,6 +219,15 @@ test("הזמנה לטעימה: מעגלים למעלה ל-10 גרם; אירוע 
   assert.equal(order.totals.fish, 120); // 3 × 0.5 × 80 = 120
   assert.equal(order.totals.veg, 10); // 7.5 → 10
   assert.deepEqual(order.breakdown.veg, [{ ingredient: "לא מפורט", grams: 10 }]);
+});
+
+test("לקוח חדש: צריך שם, טלפון תקין ומייל תקין", () => {
+  const ok = { full_name: "רות כהן", phone: "050-1234567", email: "ruth@example.com" };
+  assert.deepEqual(validateNewClient(ok), []);
+  assert.equal(validateNewClient({ ...ok, full_name: " א " }).length, 1);
+  assert.equal(validateNewClient({ ...ok, phone: "12345" }).length, 1);
+  assert.equal(validateNewClient({ ...ok, email: "ruth@" }).length, 1);
+  assert.equal(validateNewClient({ full_name: "", phone: "", email: "" }).length, 3);
 });
 
 // ---------- תאריכים ----------

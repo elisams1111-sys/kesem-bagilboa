@@ -102,6 +102,15 @@ export function validateContactStep(d: BookingDraft): string[] {
   return errors;
 }
 
+/** לקוח חדש שאיש מכירות מוסיף: שם, טלפון ומייל */
+export function validateNewClient(c: { full_name: string; phone: string; email: string }): string[] {
+  const errors: string[] = [];
+  if (c.full_name.trim().length < 2) errors.push("יש להזין שם מלא");
+  if (!isValidPhone(c.phone.trim())) errors.push("מספר הטלפון לא תקין");
+  if (!isValidEmail(c.email)) errors.push("כתובת המייל לא תקינה");
+  return errors;
+}
+
 /** אילו קבוצות סועדים צריכות בחירה בכל שלב: רגיל תמיד, ושאר הקבוצות רק אם יש בהן סועדים */
 export function requiredGroups(d: Pick<BookingDraft, "vegan_count" | "celiac_count">): GuestGroup[] {
   const groups: GuestGroup[] = ["regular"];
